@@ -15,7 +15,7 @@ from lkgof.util import random_choice_prob_index
 
 class LatentVariableModel(object, metaclass=ABCMeta):
     """
-    An abstract class of latent models.
+    An abstract class of latent variable models.
     """
     
     @property
@@ -44,6 +44,7 @@ class LatentVariableModel(object, metaclass=ABCMeta):
 
     @abstractmethod
     def sample(self, n, seed=3):
+        """Returns samples"""
         raise NotImplementedError()
 
     @abstractmethod
@@ -55,6 +56,9 @@ class LatentVariableModel(object, metaclass=ABCMeta):
 
     def score_joint(self, X, latents): 
         """Evaluate score of the joint at X and latents. 
+        The score is averaged over latent samples provided there 
+        are multiple of them.
+
         Subclasses may extend this if that is more effcient.
 
         This method computes the derivative of
@@ -106,7 +110,7 @@ class LatentVariableModel(object, metaclass=ABCMeta):
         """Sampling from the model's 
         posterior distribution. 
         
-        Optimal method. If the model has 
+        Optional method. If the model has 
         the posterior distribution, subclasses 
         can implement a sampling function. 
 
@@ -270,24 +274,61 @@ class LDAEmBayes(LatentVariableModel):
             numpy.ndarray: array of size [n, ]
         """ 
         # n words for each document X[i]
-        D, n = X.shape
-        W = self.vocab_size
+        n_docs, n_words = X.shape
+        vocab_size = self.vocab_size
         # n_topics x vocab_size
         beta = self.beta
         Z = latents['Z']
-        n_sample = Z.shape[0]
+        n_samples = Z.shape[0]
 
-        word_probs = np.empty([n_sample, D*n])
-        X_ = X.reshape(D*n)
-        range_dn = np.arange(D*n)
-        for i in range(n_sample):
-            word_probs[i] = beta[Z[i]].reshape([D*n, W])[range_dn, X_]
+        word_probs = np.empty([n_samples, n_docs*n_words])
+        X_ = X.reshape(n_docs*n_words)
+        range_dn = np.arange(n_docs*n_words)
+        for i in range(n_samples):
+            word_probs[i] = (
+                beta[Z[i]].reshape([n_docs*n_words, vocab_size])[range_dn, X_]
+            )
 
         # The implmentation below could be memory expensive
-        # n_sample x D x n words x vocab_size
+        # n_sample x n_docs x n_words x vocab_size
         # probs = beta[Z]
         # word_probs = probs.reshape(-1, D*n, W)[:, range(D*n), X.reshape(D*n)]
-        return np.sum(np.log(word_probs).reshape(-1, D, n), axis=2)
+        return np.sum(np.log(word_probs).reshape(-1, n_docs, n_words), axis=2)
+
+
+    def score_joint(self, X, latents): 
+        """Evaluate score of the joint at X and latents. 
+        The score is averaged over latent samples provided there 
+        are multiple samples.
+
+        This method computes the score function of x
+        with p(x, latents) 
+
+        Args:
+            X (numpy.ndarray): array of size n x d 
+            latents (dict): dictionary containing latents and parameters
+
+        Returns:
+            numpy array of size (n, d)
+        """
+        n_values = self.n_values
+        beta = self.beta 
+        Z = latents['Z']
+        n_samples = Z.shape[0] if len(Z.shape)==3 else 1
+            
+        n_docs, n_words = X.shape
+
+        X_ = np.mod(X+1, n_values)
+        # the folloing is possible because of conditional independence
+        S = np.zeros([n_docs, n_words])
+        for i in range(n_samples):
+            log_word_prob = np.log(beta[Z[i], X])
+            shift_log_word_prob = np.log(beta[Z[i], X_])
+            score_sample = (
+                np.exp(shift_log_word_prob - log_word_prob) - 1
+            )
+            S = S + (score_sample-S)/(i+1)
+        return S
 
     def posterior(self, X, n_sample, seed=13,
                   n_burnin=5000):
