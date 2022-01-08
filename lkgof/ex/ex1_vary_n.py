@@ -116,10 +116,10 @@ def met_gmmd_med(P, Q, data_source, n, r):
             'test_result': scmmd_result, 'time_secs': t.secs}
 
 
-def met_imqmmd(P, Q, data_source, n, r):
+def met_covimqmmd(P, Q, data_source, n, r):
     """
     Bounliphone et al., 2016's MMD-based 3-sample test.
-    * IMQ kernel. 
+    * Precondition IMQ kernel with sample covariance preconditioner
     """
     if not P.has_datasource() or not Q.has_datasource():
         # Not applicable. Return {}.
@@ -132,7 +132,10 @@ def met_imqmmd(P, Q, data_source, n, r):
 
     # Start the timer here
     with util.ContextTimer() as t:
-        k = kernel.KIMQ()
+        X = datr.data()
+        X_ = X - X.mean(axis=0)
+        cov = np.dot(X_.T, X_)
+        k = kernel.KPIMQ(P=cov)
 
         scmmd = SC_MMD(datp, datq, k, alpha=alpha)
         scmmd_result = scmmd.perform_test(datr)
@@ -141,7 +144,7 @@ def met_imqmmd(P, Q, data_source, n, r):
             'test_result': scmmd_result, 'time_secs': t.secs}
 
 
-def met_imqksd(P, Q, data_source, n, r):
+def met_covimqksd(P, Q, data_source, n, r):
     """
     KSD-based model comparison test
         * One IMQ kernel for the two statistics.
@@ -159,8 +162,10 @@ def met_imqksd(P, Q, data_source, n, r):
 
     # Start the timer here
     with util.ContextTimer() as t:
-        # medz = util.meddistance(datr.data(), subsample=1000)
-        k = kernel.KIMQ()
+        X = datr.data()
+        X_ = X - X.mean(axis=0)
+        cov = np.dot(X_.T, X_)
+        k = kernel.KPIMQ(P=cov)
 
         dcksd = mct.DC_KSD(p, q, k, k, seed=r+11, alpha=alpha)
         dcksd_result = dcksd.perform_test(datr)
@@ -213,6 +218,18 @@ def met_gksd_med_vstat(P, Q, data_source, n, r):
     """
     return met_gksd_med(P, Q, data_source, n, r,
                         varest=util.second_order_ustat_variance_vstat,
+                        )
+
+
+def met_gksd_med_jackknife(P, Q, data_source, n, r):
+    """
+    KSD-based model comparison test
+        * One Gaussian kernel for the two statistics.
+        * Requires exact marginals of the two models.
+        * Use jackknife variance estimator
+    """
+    return met_gksd_med(P, Q, data_source, n, r,
+                        varest=util.second_order_ustat_variance_jackknife,
                         )
 
 
@@ -299,12 +316,11 @@ def met_glksd_med_jackknife(P, Q, data_source, n, r):
                          )
 
 
-def met_imqlksd(P, Q, data_source, n, r):
+def met_covimqlksd(P, Q, data_source, n, r):
     """
     KSD-based model comparison test
-        * One IMQ kernel for the two statistics.
-        * Requires exact marginals of the two models.
-        * Use U-statistic variance estimator
+        * One preconditioned IMQ kernel for the two statistics.
+        * Use jackknife variance estimator
     """
 
     # sample some data 
@@ -312,13 +328,18 @@ def met_imqlksd(P, Q, data_source, n, r):
 
     # Start the timer here
     with util.ContextTimer() as t:
-        k = kernel.KIMQ()
+        X = datr.data()
+        X_ = X - X.mean(axis=0)
+        cov = np.dot(X_.T, X_)
+        k = kernel.KPIMQ(P=cov)
+
         n_burnin_p = burnin_sizes.get(type(P), 500)
         n_burnin_q = burnin_sizes.get(type(Q), 500)
         ldcksd = mct.LDC_KSD(P, Q, k, k,
                              seed=r+11, alpha=alpha,
                              n_burnin_p=n_burnin_p,
                              n_burnin_q=n_burnin_q,
+                             varest=util.second_order_ustat_variance_jackknife,
         )
         dcksd_result = ldcksd.perform_test(datr)
 
@@ -383,23 +404,24 @@ from lkgof.ex.ex1_vary_n import Ex1Job
 from lkgof.ex.ex1_vary_n import met_gmmd_med
 from lkgof.ex.ex1_vary_n import met_gksd_med
 from lkgof.ex.ex1_vary_n import met_gksd_med_vstat
+from lkgof.ex.ex1_vary_n import met_gksd_med_jackknife
 from lkgof.ex.ex1_vary_n import met_glksd_med
 from lkgof.ex.ex1_vary_n import met_glksd_med_mc10
 from lkgof.ex.ex1_vary_n import met_glksd_med_mc1000
 from lkgof.ex.ex1_vary_n import met_glksd_med_vstat
 from lkgof.ex.ex1_vary_n import met_glksd_med_jackknife
-from lkgof.ex.ex1_vary_n import met_imqmmd
-from lkgof.ex.ex1_vary_n import met_imqksd
-from lkgof.ex.ex1_vary_n import met_imqlksd
+from lkgof.ex.ex1_vary_n import met_covimqmmd
+from lkgof.ex.ex1_vary_n import met_covimqksd
+from lkgof.ex.ex1_vary_n import met_covimqlksd
 
 #--- experimental setting -----
 ex = 1
 
 # significance level of the test
-alpha = 0.05
+alpha = 0.01
 
 # repetitions for each sample size 
-reps = 1
+reps = 300
 
 # burnin size
 burnin_sizes = {
@@ -413,18 +435,19 @@ method_funcs = [
     met_gmmd_med,
     # met_gksd_med,
     # met_gksd_med_vstat,
+    met_gksd_med_jackknife,
     # met_glksd_med,
     # met_glksd_med_mc1000,
-    met_glksd_med_vstat,
-    # met_glksd_med_jackknife,
-    # met_imqmmd,
+    # met_glksd_med_vstat,
+    met_glksd_med_jackknife,
+    # met_covimqmmd,
     # met_imqksd,
     # met_imqlksd,
    ]
 
 # If is_rerun==False, do not rerun the experiment if a result file for the current
 # setting already exists.
-is_rerun = True
+is_rerun = False
 # ---------------------------
 
 
