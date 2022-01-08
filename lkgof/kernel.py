@@ -426,6 +426,53 @@ class KBoW(DKSTKernel):
         return np.array(K)
 
 
+    def gradX_Y(self, X, Y, dim, shift=-1):
+        """
+        Default: compute the (cyclic) backward difference with respect to 
+        the dimension dim of X in k(X, Y).
+
+        X: nx x d
+        Y: ny x d
+
+        Return a numpy array of size nx x ny.
+        """
+        d = X.shape[1]
+        fY = self.featurize(Y)
+        feat_Xd = self.featurize(X[:, [dim]])
+        feat_Xd_ = self.featurize(np.mod(X[:, [dim]]+shift, self.n_values[dim]))
+        return (feat_Xd - feat_Xd_).dot(fY.T) / d
+
+    def gradXY_sum(self, X, Y, shift=-1):
+        """
+        Compute the trace term in the kernel function in Yang et al., 2018. 
+
+        X: nx x d numpy array.
+        Y: ny x d numpy array. 
+
+        Return a nx x ny numpy array of the derivatives.
+        """
+        nx, d = X.shape
+        ny, _ = Y.shape
+        K = np.zeros((nx, ny))
+        n_values = self.n_values
+        featurize = self.featurize
+
+        X_shift = np.mod(X+shift, n_values)
+        Y_shift = np.mod(Y+shift, n_values)
+        fX_shift = featurize(X_shift)
+        fY = featurize(Y)
+
+        for j in range(d):
+            feat_Xd = featurize(X[:, [j]])
+            feat_Xd_s = featurize(X_shift[:, [j]])
+            feat_Yd = featurize(Y[:, [j]])
+            feat_Yd_s = featurize(Y_shift[:, [j]])
+
+            K += (feat_Xd - feat_Xd_s).dot(fY.T) / d
+            K += (feat_Yd_s - feat_Yd).dot(fX_shift.T) /d 
+        return K
+
+
 class KNormalizedBoW(KBoW):
     """Class representing the normalized version of
     the Bag of Words kernel.
@@ -484,3 +531,127 @@ class KGaussBoW(KBoW):
         Kx = np.exp(inner(X, X))
         Ky = np.exp(inner(Y, Y))
         return K / (Kx * Ky)**0.5
+
+
+class KPIMQ(KSTKernel):
+    
+    def __init__(self, P, c=1.0, b=-0.5):
+        """Precontioned IMQ kernel
+        k(x,y) = (c^2 + <(x-y), P^{-1}(x-y)>)^b
+        Note that the input has to have a compatible dimension with P. 
+
+        Args:
+            c (float): a bias parameter
+            b (float): exponenent (-1 < b < 0)
+            P (ndarray): preconditioning matrix. Required to be positive definite.
+        """
+        self.c = c
+        if not b < 0:
+            raise ValueError('The exponent has to be negative')
+        if not c > 0:
+            raise ValueError('c has to be positive. Was {}'.format(c))
+        self.b = b
+        U, s, _ = np.linalg.svd((P+P.T)/2)
+        if np.min(s) <= 1e-8:
+            raise ValueError('P has to be positive definite')
+        self.invsqrtP = np.dot(U, np.diag(s**(-0.5)))
+    
+    def _load_params(self):
+        return self.c, self.b, self.invsqrtP
+
+    def eval(self, X, Y):
+        """Evalute the kernel on data X and Y """
+        c, b, invsqrtP = self._load_params()
+        X_ = np.dot(X, invsqrtP)
+        Y_ = np.dot(Y, invsqrtP)
+        D2 = util.dist2_matrix(X_, Y_)
+        K = (c**2 + D2)**b
+        return K
+    
+    def pair_eval(self, X, Y):
+        """Evaluate k(x1, y1), k(x2, y2), ...
+        """
+        assert X.shape[0] == Y.shape[0]
+        c, b, invsqrtP = self._load_params()
+        X_ = np.dot(X, invsqrtP)
+        Y_ = np.dot(Y, invsqrtP)
+
+        return (c**2 + np.sum((X_-Y_)**2, 1))**b
+
+    def gradX_Y(self, X, Y, dim):
+        """
+        Compute the gradient with respect to the dimension dim of X in k(X, Y).
+
+        X: nx x d
+        Y: ny x d
+
+        Return a numpy array of size nx x ny.
+        """
+        c, b, invsqrtP = self._load_params()
+        X_ = np.dot(X, invsqrtP)
+        Y_ = np.dot(Y, invsqrtP)
+        D2 = util.dist2_matrix(X_, Y_)
+        diff = (X_[np.newaxis] - Y_[:, np.newaxis, :]).transpose(1, 0, 2)
+        p = invsqrtP[:, dim]
+        Gdim = ( 2.0*b*(c**2 + D2)**(b-1) )[:, :, np.newaxis] * diff
+        Gdim = np.dot(Gdim, p)
+        assert Gdim.shape[0] == X.shape[0]
+        assert Gdim.shape[1] == Y.shape[0]
+        return Gdim
+
+    def gradY_X(self, X, Y, dim):
+        """
+        Compute the gradient with respect to the dimension dim of Y in k(X, Y).
+
+        X: nx x d
+        Y: ny x d
+
+        Return a numpy array of size nx x ny.
+        """
+        return self.gradX_Y(Y, X, dim)
+
+    def gradXY_sum(self, X, Y):
+        """
+        Compute
+        \sum_{i=1}^d \frac{\partial^2 k(X, Y)}{\partial x_i \partial y_i}
+        evaluated at each x_i in X, and y_i in Y.
+
+        X: nx x d numpy array.
+        Y: ny x d numpy array.
+
+        Return a nx x ny numpy array of the derivatives.
+        """
+        c, b, invsqrtP = self._load_params()
+        P_ = np.dot(invsqrtP, invsqrtP)
+        X_ = np.dot(X, invsqrtP)
+        Y_ = np.dot(Y, invsqrtP)
+        diff = (X_[np.newaxis] - Y_[:, np.newaxis, :]).transpose(1, 0, 2)
+        D2 = util.dist2_matrix(X_, Y_)
+
+        c2D2 = c**2 + D2
+        T1 = np.einsum('ij, nmi, nmj->nm', P_, diff, diff)
+        T1 = -T1 * 4.0*b*(b-1)*(c2D2**(b-2))
+        T2 = -2.0*b*np.sum(np.diag(P_))*c2D2**(b-1) 
+        return T1 + T2
+
+# end class KPIMQ
+
+
+def main():
+    n = 10
+    d = 5
+    X = np.random.randn(n, d)
+    Y = np.random.randn(n+1, d)
+    P = np.eye(5)
+    k = KPIMQ(P, c=1.0, b=-0.5)
+    kimq = KIMQ()
+    K1 = (k.gradX_Y(X, Y, 0))
+    K2 = kimq.gradX_Y(X, Y, 0)
+
+    K1 = k.gradXY_sum(X, Y)
+    K2 = kimq.gradXY_sum(X, Y)
+    print(np.amax(K1-K2))
+
+
+if __name__ == '__main__':
+    main()
