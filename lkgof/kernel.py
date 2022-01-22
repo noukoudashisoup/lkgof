@@ -554,7 +554,7 @@ class KPIMQ(KSTKernel):
         U, s, _ = np.linalg.svd((P+P.T)/2)
         if np.min(s) <= 1e-8:
             raise ValueError('P has to be positive definite')
-        self.invsqrtP = np.dot(U, np.diag(s**(-0.5)))
+        self.invsqrtP = U @ np.diag(s**(-0.5)) @ U.T
     
     def _load_params(self):
         return self.c, self.b, self.invsqrtP
@@ -562,8 +562,8 @@ class KPIMQ(KSTKernel):
     def eval(self, X, Y):
         """Evalute the kernel on data X and Y """
         c, b, invsqrtP = self._load_params()
-        X_ = np.dot(X, invsqrtP)
-        Y_ = np.dot(Y, invsqrtP)
+        X_ = np.dot(X, invsqrtP.T)
+        Y_ = np.dot(Y, invsqrtP.T)
         D2 = util.dist2_matrix(X_, Y_)
         K = (c**2 + D2)**b
         return K
@@ -573,8 +573,8 @@ class KPIMQ(KSTKernel):
         """
         assert X.shape[0] == Y.shape[0]
         c, b, invsqrtP = self._load_params()
-        X_ = np.dot(X, invsqrtP)
-        Y_ = np.dot(Y, invsqrtP)
+        X_ = np.dot(X, invsqrtP.T)
+        Y_ = np.dot(Y, invsqrtP.T)
 
         return (c**2 + np.sum((X_-Y_)**2, 1))**b
 
@@ -588,8 +588,8 @@ class KPIMQ(KSTKernel):
         Return a numpy array of size nx x ny.
         """
         c, b, invsqrtP = self._load_params()
-        X_ = np.dot(X, invsqrtP)
-        Y_ = np.dot(Y, invsqrtP)
+        X_ = np.dot(X, invsqrtP.T)
+        Y_ = np.dot(Y, invsqrtP.T)
         D2 = util.dist2_matrix(X_, Y_)
         diff = (X_[np.newaxis] - Y_[:, np.newaxis, :]).transpose(1, 0, 2)
         p = invsqrtP[:, dim]
@@ -622,9 +622,9 @@ class KPIMQ(KSTKernel):
         Return a nx x ny numpy array of the derivatives.
         """
         c, b, invsqrtP = self._load_params()
-        P_ = np.dot(invsqrtP, invsqrtP)
-        X_ = np.dot(X, invsqrtP)
-        Y_ = np.dot(Y, invsqrtP)
+        P_ = np.dot(invsqrtP, invsqrtP.T)
+        X_ = np.dot(X, invsqrtP.T)
+        Y_ = np.dot(Y, invsqrtP.T)
         diff = (X_[np.newaxis] - Y_[:, np.newaxis, :]).transpose(1, 0, 2)
         D2 = util.dist2_matrix(X_, Y_)
 
