@@ -68,18 +68,83 @@ def second_order_ustat_variance_jackknife(H):
     di = np.diag_indices(n)
     Ht = H.copy()
     Ht[di] = 0.
-    ustat = np.sum(Ht) / (n*(n-1))
+    Htsum = np.sum(Ht)
 
+    lfn3 = lower_factorial(n, 3)
     variance = 0.
-
     for i in range(n):
-        idx = np.arange(n)
-        idx = np.delete(idx, i)
-        H_ = Ht[idx][:, idx]
-        mean = np.sum(H_) / ((n-1)*(n-2))
-        tmp = (mean-ustat)**2
+        tmp = 4.*( (n*Ht[i, :].sum() - Htsum) / lfn3)**2
         variance = variance + (tmp-variance) / (i+1)
     variance = (n-1)*variance
 
     return variance
  
+
+def dimwise_dist_matrix(X, Y):
+    """
+    Construct a pairwise Euclidean distance matrix of size X.shape[0] x Y.shape[0] x X.shape[1]
+    """
+    sx = X**2
+    sy = Y**2
+    D2 =  sx[:, np.newaxis, :] + sy[np.newaxis, :, :] - 2.0*np.einsum('ij,kj->ikj', X, Y)
+    # to prevent numerical errors from taking sqrt of negative numbers
+    D2[D2 < 0] = 0
+    D = np.sqrt(D2)
+    return D
+
+
+def dimwise_meddistance(X, subsample=None, mean_on_fail=True):
+    """
+    Compute the median of pairwise, dimension wise distances (not distance squared) of points
+    in the matrix.  Useful as a heuristic for setting Gaussian kernel's width.
+
+    Parameters
+    ----------
+    X : n x d numpy array
+    mean_on_fail: True/False. If True, use the mean when the median distance is 0.
+        This can happen especially, when the data are discrete e.g., 0/1, and 
+        there are more slightly more 0 than 1. In this case, the m
+
+    Return
+    ------
+    array of median distance of size d
+    """
+    if subsample is None:
+        D = dimwise_dist_matrix(X, X)
+        Itri = np.tril_indices(D.shape[0], -1)
+        Tri = D[Itri].reshape(-1, X.shape[-1])
+        med = np.median(Tri, axis=0)
+        if np.any(med) <= 0:
+            # use the mean
+            return np.mean(Tri, axis=0)
+        return med
+
+    else:
+        assert subsample > 0
+        rand_state = np.random.get_state()
+        np.random.seed(9827)
+        n = X.shape[0]
+        ind = np.random.choice(n, min(subsample, n), replace=False)
+        np.random.set_state(rand_state)
+        # recursion just one
+        return dimwise_meddistance(X[ind, :], None, mean_on_fail)
+
+
+def lower_factorial(n, k):
+    """Returns \prod_{i=0}^{k-1} (n-i) """
+    if k == 0:
+        return 1.
+    return np.prod([(n-ik) for ik in range(k)])
+
+
+def main():
+    n = 10
+    d = 3
+    X = np.random.randn(n, d)
+    meds = dimwise_meddistance(X,)
+    for i in range(d):
+        print(meddistance(X[:, i, np.newaxis]))
+    print(meds)
+
+if __name__ == '__main__':
+    main()
