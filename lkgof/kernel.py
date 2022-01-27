@@ -591,7 +591,7 @@ class KPIMQ(KSTKernel):
         X_ = np.dot(X, invsqrtP.T)
         Y_ = np.dot(Y, invsqrtP.T)
         D2 = util.dist2_matrix(X_, Y_)
-        diff = (X_[np.newaxis] - Y_[:, np.newaxis, :]).transpose(1, 0, 2)
+        diff = (X_[:, np.newaxis] - Y_[np.newaxis])
         p = invsqrtP[:, dim]
         Gdim = ( 2.0*b*(c**2 + D2)**(b-1) )[:, :, np.newaxis] * diff
         Gdim = np.dot(Gdim, p)
@@ -625,7 +625,7 @@ class KPIMQ(KSTKernel):
         P_ = np.dot(invsqrtP, invsqrtP.T)
         X_ = np.dot(X, invsqrtP.T)
         Y_ = np.dot(Y, invsqrtP.T)
-        diff = (X_[np.newaxis] - Y_[:, np.newaxis, :]).transpose(1, 0, 2)
+        diff = (X_[:, np.newaxis, :] - Y_[np.newaxis])
         D2 = util.dist2_matrix(X_, Y_)
 
         c2D2 = c**2 + D2
