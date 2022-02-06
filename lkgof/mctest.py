@@ -34,7 +34,7 @@ class DC_KSD(object):
     """
 
     def __init__(self, p, q, k, l, seed=11, alpha=0.05,
-                 varest=util.second_order_ustat_variance_ustat,
+                 varest=util.second_order_ustat_variance_jackknife,
                  ):
         self.p = p
         self.q = q
@@ -142,7 +142,7 @@ class LDC_KSD(object):
                  mc_param_p, mc_param_q,
                  ps_p=None, ps_q=None,
                  alpha=0.01, seed=11,
-                 varest=util.second_order_ustat_variance_ustat):
+                 varest=util.second_order_ustat_variance_jackknife,):
         self.modelp = modelp
         self.modelq = modelq
         self.k = k
@@ -254,11 +254,11 @@ class SC_MMD(object):
 
     def __init__(self, datap, dataq, k, alpha=0.01):
         """
-        :param datap: a kmod.data.Data object representing an i.i.d. sample X
+        :param datap: a lkgof.data.Data object representing an i.i.d. sample X
             (from model 1)
-        :param dataq: a kmod.data.Data object representing an i.i.d. sample Y
+        :param dataq: a lkgof.data.Data object representing an i.i.d. sample Y
             (from model 2)
-        :param k: a kmod.Kernel
+        :param k: a lkgof.Kernel
         :param alpha: significance level of the test
         """
         self.datap = datap
@@ -277,7 +277,7 @@ class SC_MMD(object):
             time_secs: ...
         }
 
-        :param dat: an instance of kmod.data.Data
+        :param dat: an instance of lkgof.data.Data
         """
         with util.ContextTimer() as t:
             alpha = self.alpha
