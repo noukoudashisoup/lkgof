@@ -415,14 +415,14 @@ class KBoW(DKSTKernel):
         d = self.dim()
         X_ = self.featurize(X)
         Y_ = self.featurize(Y)
-        K = X_.dot(Y_.T) / d
+        K = X_.dot(Y_.T) / d**2
         return K.toarray()
     
     def pair_eval(self, X, Y):
         d = self.dim()
         X_ = self.featurize(X)
         Y_ = self.featurize(Y)
-        K = X_.multiply(Y_).sum(axis=1) / d
+        K = X_.multiply(Y_).sum(axis=1) / d**2
         return np.array(K)
 
 
@@ -440,7 +440,7 @@ class KBoW(DKSTKernel):
         fY = self.featurize(Y)
         feat_Xd = self.featurize(X[:, [dim]])
         feat_Xd_ = self.featurize(np.mod(X[:, [dim]]+shift, self.n_values[dim]))
-        return (feat_Xd - feat_Xd_).dot(fY.T) / d
+        return (feat_Xd - feat_Xd_).dot(fY.T) / d**2
 
     def gradXY_sum(self, X, Y, shift=-1):
         """
@@ -468,8 +468,8 @@ class KBoW(DKSTKernel):
             feat_Yd = featurize(Y[:, [j]])
             feat_Yd_s = featurize(Y_shift[:, [j]])
 
-            K += (feat_Xd - feat_Xd_s).dot(fY.T) / d
-            K += (feat_Yd_s - feat_Yd).dot(fX_shift.T) /d 
+            K += (feat_Xd - feat_Xd_s).dot(fY.T) / d**2
+            K += (feat_Yd_s - feat_Yd).dot(fX_shift.T) /d**2
         return K
 
 

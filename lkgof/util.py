@@ -74,6 +74,7 @@ def second_order_ustat_variance_jackknife(H):
     variance = 0.
     for i in range(n):
         tmp = 4.*( (n*Ht[i, :].sum() - Htsum) / lfn3)**2
+        # sequentially compute the empirical mean
         variance = variance + (tmp-variance) / (i+1)
     variance = (n-1)*variance
 

@@ -10,7 +10,7 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 import lkgof.util as util
 from lkgof import model
 from lkgof import mctest as mct
-from kmod.mctest import SC_MMD
+from lkgof.mctest import SC_MMD
 import lkgof.glo as glo
 import lkgof.kernel as kernel
 import scipy.stats as stats
@@ -56,8 +56,8 @@ All the method functions take the following mandatory inputs:
     - A method function may have more arguments which have default values.
 """
 
-
-def sample_pqr(ds_p, ds_q, ds_r, n, r, only_from_r=False):
+def sample_pqr(P, Q, ds_r, n, r, only_from_r=False, 
+               pqr_same_sample_size=False):
     """
     Generate three samples from the three data sources given a trial index r.
     All met_ functions should use this function to draw samples. This is to
@@ -75,12 +75,21 @@ def sample_pqr(ds_p, ds_q, ds_r, n, r, only_from_r=False):
     datr = ds_r.sample(n, seed=r+30)
     if only_from_r:
         return datr
-    datp = ds_p.sample(n, seed=r+10000)
-    datq = ds_q.sample(n, seed=r+20000)
+    ds_p = P.get_datasource()
+    ds_q = Q.get_datasource()
+    if pqr_same_sample_size:
+        n_model_samples = n
+    else:
+        n_burnin_p = burnin_sizes.get(type(P), 500)
+        n_burnin_q = burnin_sizes.get(type(Q), 500)
+        n_model_samples = n + max(n_burnin_p, n_burnin_q) + n_mcsamples
+    datp = ds_p.sample(n_model_samples, seed=r+1000)
+    datq = ds_q.sample(n_model_samples, seed=r+2000)
     return datp, datq, datr
 
 
 # -------------------------------------------------------
+
 def met_dis_hmmd(P, Q, data_source, n, r):
     """
     Bounliphone et al., 2016's MMD-based 3-sample test.
@@ -217,7 +226,7 @@ def met_dis_hksd(P, Q, data_source, n, r):
 
 
 def _met_dis_lksd(P, Q, data_source, n, r, k, mc_sample=500,
-                  varest=util.second_order_ustat_variance_ustat,
+                  varest=util.second_order_ustat_variance_jackknife,
                   ):
     """
     Wrapper for Latent KSD-based model comparison test (relative test). 
@@ -230,8 +239,8 @@ def _met_dis_lksd(P, Q, data_source, n, r, k, mc_sample=500,
     with util.ContextTimer() as t:
         n_burnin_p = burnin_sizes.get(type(P), 500)
         n_burnin_q = burnin_sizes.get(type(Q), 500)
-        mc_param_p = MCParam(mc_sample, n_burnin_p)
-        mc_param_q = MCParam(mc_sample, n_burnin_q)
+        mc_param_p = MCParam(n_mcsamples, n_burnin_p)
+        mc_param_q = MCParam(n_mcsamples, n_burnin_q)
         ldcksd = mct.LDC_KSD(P, Q, k, k, seed=r+11, alpha=alpha,
                              mc_param_p=mc_param_p, mc_param_q=mc_param_q,
                              varest=varest,
@@ -276,24 +285,6 @@ def met_dis_bowlksd(P, Q, data_source, n, r):
     return result
 
 
-def met_dis_bowlksd_vstat(P, Q, data_source, n, r):
-    """
-    Latent KSD-based model comparison test (relative test). 
-        * Exponentiated Vanilla BoW kernel for discrete observations.
-        * Use V-statistic variance estimator
-    """
-
-    if not np.all(P.n_values == Q.n_values):
-        raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
-    n_values = P.n_values
-    d = P.dim
-    k = kernel.KBoW(n_values, d)
-    result = _met_dis_lksd(P, Q, data_source, n, r, k,
-                           varest=util.second_order_ustat_variance_vstat,
-                           )
-    return result
-
-
 def met_dis_nbowlksd(P, Q, data_source, n, r):
     """
     Latent KSD-based model comparison test (relative test). 
@@ -310,24 +301,6 @@ def met_dis_nbowlksd(P, Q, data_source, n, r):
     return result
 
 
-def met_dis_nbowlksd_vstat(P, Q, data_source, n, r):
-    """
-    Latent KSD-based model comparison test (relative test). 
-        * Exponentiated Normalized BoW kernel for discrete observations.
-        * Use V-statistic variance estimator
-    """
-    if not np.all(P.n_values == Q.n_values):
-        raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
-    n_values = P.n_values
-    d = P.dim
-
-    k = kernel.KNormalizedBoW(n_values, d)
-    result = _met_dis_lksd(P, Q, data_source, n, r, k,
-                           varest=util.second_order_ustat_variance_vstat,
-                           )
-    return result
-
-
 def met_dis_gbowlksd(P, Q, data_source, n, r):
     """
     Latent KSD-based model comparison test (relative test).
@@ -341,42 +314,6 @@ def met_dis_gbowlksd(P, Q, data_source, n, r):
 
     k = kernel.KGaussBoW(n_values, d)
     result = _met_dis_lksd(P, Q, data_source, n, r, k, )
-    return result
-
-
-def met_dis_gbowlksd_vstat(P, Q, data_source, n, r):
-    """
-    Latent KSD-based model comparison test (relative test).
-        * Exponentiated Gaussian BoW kernel for discrete observations.
-        * Use V-statistic variance estimator
-    """
-    if not np.all(P.n_values == Q.n_values):
-        raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
-    n_values = P.n_values
-    d = P.dim
-
-    k = kernel.KGaussBoW(n_values, d)
-    result = _met_dis_lksd(P, Q, data_source, n, r, k,
-                           varest=util.second_order_ustat_variance_vstat,
-                           )
-    return result
-
-
-def met_dis_gbowlksd_jackknife(P, Q, data_source, n, r):
-    """
-    Latent KSD-based model comparison test (relative test).
-        * Exponentiated Gaussian BoW kernel for discrete observations.
-        * Use a jackknife variance estimator
-    """
-    if not np.all(P.n_values == Q.n_values):
-        raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
-    n_values = P.n_values
-    d = P.dim
-
-    k = kernel.KGaussBoW(n_values, d)
-    result = _met_dis_lksd(P, Q, data_source, n, r, k,
-                           varest=util.second_order_ustat_variance_jackknife,
-                           )
     return result
 
 
@@ -442,12 +379,8 @@ from lkgof.ex.ex2_vary_n_disc import met_dis_hksd
 from lkgof.ex.ex2_vary_n_disc import _met_dis_lksd
 from lkgof.ex.ex2_vary_n_disc import met_dis_hlksd
 from lkgof.ex.ex2_vary_n_disc import met_dis_bowlksd
-from lkgof.ex.ex2_vary_n_disc import met_dis_bowlksd_vstat
 from lkgof.ex.ex2_vary_n_disc import met_dis_nbowlksd
-from lkgof.ex.ex2_vary_n_disc import met_dis_nbowlksd_vstat
 from lkgof.ex.ex2_vary_n_disc import met_dis_gbowlksd
-from lkgof.ex.ex2_vary_n_disc import met_dis_gbowlksd_vstat
-from lkgof.ex.ex2_vary_n_disc import met_dis_gbowlksd_jackknife
 
 #--- experimental setting -----
 ex = 2 
@@ -461,20 +394,19 @@ reps = 300
 burnin_sizes = {
     model.LDAEmBayes: 5000,
 }
+
+n_mcsamples = 500
+
 # tests to try
 method_funcs = [ 
     # met_dis_hmmd
     # met_dis_bowmmd,
     # met_dis_nbowmmd,
-    # met_dis_gbowmmd,
+    met_dis_gbowmmd,
     # met_dis_hksd,
     # met_dis_hlksd,
     # met_dis_bowlksd,
-    # met_dis_bowlksd_vstat,
-    # met_dis_nbowlksd_vstat,
-    met_dis_gbowlksd_vstat,
     met_dis_gbowlksd,
-    met_dis_gbowlksd_jackknife,
    ]
 
 # If is_rerun==False, do not rerun the experiment if a result file for the current
