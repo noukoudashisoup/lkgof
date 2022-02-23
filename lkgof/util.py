@@ -1,6 +1,7 @@
 # all utility functions in kgof.util are visible.
 from kgof.util import *
 import numpy as np
+from scipy import sparse
 
 
 def onehot_encode(X, n_values):
@@ -137,6 +138,15 @@ def lower_factorial(n, k):
         return 1.
     return np.prod([(n-ik) for ik in range(k)])
 
+def featurize_bow(X, W):
+    # vocab size
+    n, d = X.shape
+    data = np.ones(n*d)
+    indices = X.ravel()
+    indptr = np.arange(0, n*d+1, d)
+    X_ = sparse.csr_matrix((data, indices, indptr), shape=(n, W))
+    return X_
+     
 
 def main():
     n = 10

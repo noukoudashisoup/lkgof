@@ -78,15 +78,13 @@ def discrete_score(log_den, X, n_values, *args, shift=1,
     n, d = X.shape
     S = np.empty([n, d])
     logden_X = log_den(X, *args)
-    if average:
-        logden_X = np.mean(logden_X, axis=0)
     for j in range(d):
         X_ = X.copy()
         X_[:, j] = np.mod(X[:, j]+shift, n_values[j])
         logden_X_ = log_den(X_, *args)
-        if average:
-            logden_X_ = np.mean(logden_X_, axis=0)
         ratio = np.exp(logden_X_ - logden_X)
+        if average:
+            ratio = ratio.mean(axis=0)
         S[:, j] = ratio - 1.
     # print(np.unique(S))
     return S

@@ -135,7 +135,7 @@ class LDC_KSD(object):
     - seed: random seed
     - varest:
         Variance estimator method.
-        Defaults to util.second_order_ustat_variance_ustat.
+        Defaults to util.second_order_ustat_variance_jackknife
     """
 
     def __init__(self, modelp, modelq, k, l,
@@ -172,16 +172,11 @@ class LDC_KSD(object):
             stat = (n**0.5) * mean
             scale = (var * n)**0.5
             log.l().info(
-                'scale: {}, threshold: {}'.format(
-                    scale, scale*stats.norm.ppf(1-alpha))
+                'var: {}, scale: {}, threshold: {}'.format(
+                    var, scale, scale*stats.norm.ppf(1-alpha))
             )
-            if scale <= 1e-7:
-                (('SD of the null distribution is too small.'
-                  'Was {}. Will not reject H0.').format(scale))
-                pval = np.inf
-            else:
-                # Assume the mean of the null distribution is 0
-                pval = stats.norm.sf(stat, loc=0, scale=scale)
+            # Assume the mean of the null distribution is 0
+            pval = stats.norm.sf(stat, loc=0, scale=scale)
             rejected = (mean > stats.norm.ppf(1-alpha)*(var**0.5))
 
         results = {'alpha': self.alpha, 'pvalue': pval, 'test_stat': stat,
@@ -297,6 +292,7 @@ class SC_MMD(object):
             stat = (n**0.5) * mean
             # Assume the mean of the null distribution is 0
             pval = stats.norm.sf(stat, loc=0, scale=var**0.5)
+            rejected = (stat > stats.norm.ppf(1-alpha)*(var**0.5))
 
             # rejected = (mean > stats.norm.ppf(1-alpha)*(var**0.5))
             if not util.is_real_num(pval):
@@ -305,7 +301,7 @@ class SC_MMD(object):
 
         results = {
             'alpha': self.alpha, 'pvalue': pval, 'test_stat': stat,
-            'h0_rejected': pval < alpha, 'time_secs': t.secs,
+            'h0_rejected': rejected, 'time_secs': t.secs,
         }
         return results
 

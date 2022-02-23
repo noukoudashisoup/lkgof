@@ -41,14 +41,15 @@ def lda_collapsed_gibbs(X, n_sample, Z_init, n_topics,
             u, cnt = np.unique(Z_[i_d], return_counts=True)
             C[i_d, u] = cnt
 
+        n_docs_range = np.arange(n_docs)
         for i in range(n_iter):
             j = np.random.randint(0, n_words)
-            C[np.arange(n_docs), Z_[:, j]] -= 1
+            C[n_docs_range, Z_[:, j]] -= 1
             # p = n_docs x n_topics
-            p = beta[:, X[:, j]].T * (C+alpha)
+            p = beta[:, X[:, j]].T * (C+alpha) 
             p = p / np.sum(p, axis=1, keepdims=True)
             Z_[:, j] = random_choice_prob_index(p)
-            C[np.arange(n_docs), Z_[:, j]] += 1
+            C[n_docs_range, Z_[:, j]] += 1
             if keepsample:
                 Z_batch[i] = Z_.copy()
         if keepsample:

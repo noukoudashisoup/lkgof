@@ -3,8 +3,8 @@
 from kgof.kernel import *
 import autograd.numpy as np
 from lkgof.density import DiscreteFunction
+from lkgof.util import featurize_bow
 import scipy.spatial.distance
-from scipy import sparse
 
 
 class DKSTKernel(Kernel, DiscreteFunction):
@@ -401,16 +401,9 @@ class KBoW(DKSTKernel):
         super(KBoW, self).__init__(n_values, d)
     
     def featurize(self, X):
-        n_values = self.n_values
-        # vocab size
-        W = n_values[0]
-        n, d = X.shape
-        data = np.ones(n*d)
-        indices = X.ravel()
-        indptr = np.arange(0, n*d+1, d)
-        X_ = sparse.csr_matrix((data, indices, indptr), shape=(n, W))
-        return X_
-            
+        W = self.n_values[0]
+        return featurize_bow(X, W)
+
     def eval(self, X, Y):
         d = self.dim()
         X_ = self.featurize(X)
@@ -459,18 +452,18 @@ class KBoW(DKSTKernel):
 
         X_shift = np.mod(X+shift, n_values)
         Y_shift = np.mod(Y+shift, n_values)
-        fX_shift = featurize(X_shift)
         fY = featurize(Y)
-
         for j in range(d):
+            Y_ = Y.copy()
+            Y_[:, j] = np.mod(Y[:, j]+shift, self.n_values[j])
+            fY_s = featurize(Y_)
+
             feat_Xd = featurize(X[:, [j]])
             feat_Xd_s = featurize(X_shift[:, [j]])
-            feat_Yd = featurize(Y[:, [j]])
-            feat_Yd_s = featurize(Y_shift[:, [j]])
 
             K += (feat_Xd - feat_Xd_s).dot(fY.T) / d**2
-            K += (feat_Yd_s - feat_Yd).dot(fX_shift.T) /d**2
-        return K
+            K += (feat_Xd_s - feat_Xd).dot(fY_s.T) /d**2
+        return np.array(K)
 
 
 class KNormalizedBoW(KBoW):
@@ -503,7 +496,7 @@ class KNormalizedBoW(KBoW):
         return K / (Kx * Ky)**0.5
 
 
-class KGaussBoW(KBoW):
+class KGaussBoW(DKSTKernel):
     """Class representing the Gaussian kernel defined on
     Bag-of-Words vectors.
 
@@ -514,23 +507,28 @@ class KGaussBoW(KBoW):
             dimensionality
     """
  
-    def __init__(self, n_values, d):
+    def __init__(self, n_values, d, s2=1.0):
         super(KGaussBoW, self).__init__(n_values, d)
+        self.kbow = KBoW(n_values, d)
+        self.s2 = s2
     
     def eval(self, X, Y):
-        eval = super(KGaussBoW, self).eval
-        pair_eval = super(KGaussBoW, self).pair_eval
+        kbow = self.kbow
+        eval = kbow.eval
+        pair_eval = kbow.pair_eval
+        s2 = self.s2
         K = np.exp(eval(X, Y))
         Kx = np.exp(pair_eval(X, X))
         Ky = np.exp(pair_eval(Y, Y))
-        return K / (Kx * Ky.T)**0.5
+        return (K / (Kx * Ky.T)**0.5)**(1./s2)
     
     def pair_eval(self, X, Y):
-        inner = super(KNormalizedBoW, self).pair_eval
+        inner = self.kbow.pair_eval
+        s2 = self.s2
         K = np.exp(inner(X, Y))
         Kx = np.exp(inner(X, X))
         Ky = np.exp(inner(Y, Y))
-        return K / (Kx * Ky)**0.5
+        return (K / (Kx * Ky)**0.5)**(1./s2)
 
 
 class KPIMQ(KSTKernel):
@@ -636,6 +634,19 @@ class KPIMQ(KSTKernel):
 
 # end class KPIMQ
 
+def main2():
+    n = 100
+    d = 50
+    v = 1000
+    n_values = np.array(d*[v])
+    k = KBoW(n_values=n_values, d=d)
+    X = np.random.randint(0, v, [n, d])
+    from lkgof.util import ContextTimer
+    with ContextTimer() as t:
+        K1 = k.gradXY_sum(X, X)
+        K2 = super(KBoW, k).gradXY_sum(X, X)
+    print(K1-K2)
+    print(t.secs)
 
 def main():
     n = 10
@@ -654,4 +665,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main2()

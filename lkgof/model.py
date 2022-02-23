@@ -292,7 +292,7 @@ class LDAEmBayes(LatentVariableModel):
         # The implmentation below could be memory expensive
         # n_sample x n_docs x n_words x vocab_size
         # probs = beta[Z]
-        # word_probs = probs.reshape(-1, D*n, W)[:, range(D*n), X.reshape(D*n)]
+        # word_probs = probs.reshape(-1, n_docs*n_words, vocab_size)[:, range(n_docs*n_words), X.reshape(n_docs*n_words)]
         return np.sum(np.log(word_probs).reshape(-1, n_docs, n_words), axis=2)
 
 
@@ -311,21 +311,21 @@ class LDAEmBayes(LatentVariableModel):
         Returns:
             numpy array of size (n, d)
         """
-        n_values = self.n_values
+        n_values = self.n_values.reshape([1, -1])
         beta = self.beta 
         Z = latents['Z']
         n_samples = Z.shape[0] if len(Z.shape)==3 else 1
             
         n_docs, n_words = X.shape
 
-        X_ = np.mod(X+1, n_values)
-        # the folloing is possible because of conditional independence
+        X_ = np.mod(X+1, n_values).astype(np.int64)
+        # the following is possible because of conditional independence
         S = np.zeros([n_docs, n_words])
         for i in range(n_samples):
             log_word_prob = np.log(beta[Z[i], X])
             shift_log_word_prob = np.log(beta[Z[i], X_])
             score_sample = (
-                np.exp(shift_log_word_prob - log_word_prob) - 1
+                np.exp(shift_log_word_prob - log_word_prob) - 1.
             )
             S = S + (score_sample-S)/(i+1)
         return S
@@ -487,11 +487,16 @@ def main():
     drclt = stats.dirichlet(alpha=np.ones(vocab_size))
     beta = drclt.rvs(size=n_topics)
     lda = LDAEmBayes(alpha, beta, vocab_size*np.ones(n_words))
-    X, Z = lda.sample(n_doc)
+    X, Z = lda.sample(n_doc, return_latent=True)
+    X = X.data()
     Z_init = np.random.randint(0, n_topics, [n_doc, n_words])
     with util.ContextTimer() as t:
-        mcmc.lda_collapsed_gibbs(X, 1, Z_init, n_topics,
+        Z_batch = mcmc.lda_collapsed_gibbs(X, 3, Z_init, n_topics,
                                  alpha, beta, n_burnin=400)
+    score_new = lda.score_joint(X, latents={'Z':Z_batch})
+    score_old = super(LDAEmBayes, lda).score_joint(X, latents={'Z':Z_batch})
+    print(np.abs(score_old - score_new).mean())
+
 
 
 if __name__ == '__main__':
