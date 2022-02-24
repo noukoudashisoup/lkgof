@@ -100,15 +100,13 @@ def met_dis_hmmd(P, Q, data_source, n, r):
         # Not applicable. Return {}.
         return {}
 
-    ds_p = P.get_datasource()
-    ds_q = Q.get_datasource()
     if not np.all(P.n_values == Q.n_values):
         raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
     n_values = P.n_values
     d = P.dim
 
     # sample some data 
-    datp, datq, datr = sample_pqr(ds_p, ds_q, data_source, n, r, only_from_r=False)
+    datp, datq, datr = sample_pqr(P, Q, data_source, n, r, only_from_r=False)
 
     # Start the timer here
     with util.ContextTimer() as t:
@@ -131,13 +129,11 @@ def _met_dis_mmd(P, Q, data_source, n, r, k):
         # Not applicable. Return {}.
         return {}
 
-    ds_p = P.get_datasource()
-    ds_q = Q.get_datasource()
     if not np.all(P.n_values == Q.n_values):
         raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
 
     # sample some data 
-    datp, datq, datr = sample_pqr(ds_p, ds_q, data_source, n, r, only_from_r=False)
+    datp, datq, datr = sample_pqr(P, Q, data_source, n, r, only_from_r=False)
 
     # Start the timer here
     with util.ContextTimer() as t:
@@ -189,9 +185,25 @@ def met_dis_gbowmmd(P, Q, data_source, n, r):
         raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
     n_values = P.n_values
     d = P.dim
-    k = kernel.KGaussBoW(n_values, d)
+    k = kernel.KGaussBoW(n_values, d, s2=d**2)
     result = _met_dis_mmd(P, Q, data_source, n, r, k)
     return result
+
+
+def met_dis_imqbowmmd(P, Q, data_source, n, r):
+    """
+    Bounliphone et al., 2016's MMD-based 3-sample test.
+    * IMQ BoW kernel for discrete observations.
+    * Use full sample for testing (no holding out for optimization)
+    """
+    if not np.all(P.n_values == Q.n_values):
+        raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
+    n_values = P.n_values
+    d = P.dim
+    k = kernel.KIMQBoW(n_values, d, s2=1.)
+    result = _met_dis_mmd(P, Q, data_source, n, r, k)
+    return result
+
 
 
 def met_dis_hksd(P, Q, data_source, n, r):
@@ -312,7 +324,23 @@ def met_dis_gbowlksd(P, Q, data_source, n, r):
     n_values = P.n_values
     d = P.dim
 
-    k = kernel.KGaussBoW(n_values, d)
+    k = kernel.KGaussBoW(n_values, d, s2=d**2)
+    result = _met_dis_lksd(P, Q, data_source, n, r, k, )
+    return result
+
+
+def met_dis_imqbowlksd(P, Q, data_source, n, r):
+    """
+    Latent KSD-based model comparison test (relative test).
+        * IMQ BoW kernel for discrete observations.
+        * Use U-statistic variance estimator
+    """
+    if not np.all(P.n_values == Q.n_values):
+        raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
+    n_values = P.n_values
+    d = P.dim
+
+    k = kernel.KIMQBoW(n_values, d, s2=1.)
     result = _met_dis_lksd(P, Q, data_source, n, r, k, )
     return result
 
@@ -381,6 +409,8 @@ from lkgof.ex.ex2_vary_n_disc import met_dis_hlksd
 from lkgof.ex.ex2_vary_n_disc import met_dis_bowlksd
 from lkgof.ex.ex2_vary_n_disc import met_dis_nbowlksd
 from lkgof.ex.ex2_vary_n_disc import met_dis_gbowlksd
+from lkgof.ex.ex2_vary_n_disc import met_dis_imqbowmmd
+from lkgof.ex.ex2_vary_n_disc import met_dis_imqbowlksd
 
 #--- experimental setting -----
 ex = 2 
@@ -389,13 +419,13 @@ ex = 2
 alpha = 0.05
 
 # repetitions for each sample size 
-reps = 300
+reps = 100
 
 burnin_sizes = {
-    model.LDAEmBayes: 5000,
+    model.LDAEmBayes: 4000,
 }
 
-n_mcsamples = 500
+n_mcsamples = 1000
 
 # tests to try
 method_funcs = [ 
@@ -403,15 +433,17 @@ method_funcs = [
     # met_dis_bowmmd,
     # met_dis_nbowmmd,
     met_dis_gbowmmd,
+    met_dis_imqbowmmd,
     # met_dis_hksd,
     # met_dis_hlksd,
     # met_dis_bowlksd,
     met_dis_gbowlksd,
+    met_dis_imqbowlksd,
    ]
 
 # If is_rerun==False, do not rerun the experiment if a result file for the current
 # setting already exists.
-is_rerun = False
+is_rerun = True
 #---------------------------
 
 
@@ -452,7 +484,7 @@ def make_betabinom_prob(dx=10, n_trial=5,
 
 
 def make_lda_prob(n_words, n_topics, vocab_size,
-                  ptb_p, ptb_q, seed=149):
+                  ptb_p, ptb_q, temp=1., seed=149):
     """LDA problem. 
     Perturbation is applied to the sparsity parameter of
     the Dirichlet prior. 
@@ -475,9 +507,16 @@ def make_lda_prob(n_words, n_topics, vocab_size,
     """
 
     n_values = np.ones(n_words, dtype=np.int64) * vocab_size
-    TEMP = 1.
+    beta = np.empty([n_topics, vocab_size])
     with util.NumpySeedContext(seed):
-        beta = stats.dirichlet(alpha=TEMP*np.ones(vocab_size)).rvs(size=n_topics)
+        beta = stats.dirichlet(alpha=temp*np.ones(vocab_size)).rvs(size=n_topics)
+    with util.NumpySeedContext(seed+100):
+        beta_ptb = stats.dirichlet(alpha=0.1*np.ones(vocab_size)).rvs(size=1)
+    # with util.NumpySeedContext(seed):
+        # beta_ = stats.dirichlet(alpha=0.1*np.ones(vocab_size)).rvs(size=1)
+    # for k in range(n_topics):
+    #     # beta[k] = (2.**(-2))*beta[k] + (1-2.**(-2))*beta_ptb
+    #     beta[k] = (1-2.**(-2))*beta[k] + (2.**(-2))*beta_ptb
     alpha = 0.1*np.ones([n_topics])
     modelr = model.LDAEmBayes(alpha, beta, n_values)
     alpha_p = alpha.copy()
@@ -512,22 +551,6 @@ def get_ns_pqrsource(prob_label):
             # list of sample sizes
             ([100, 200, 300], ) + make_betabinom_prob(dx=10, aptbp=1,
                                                       bptbp=1, aptbq=2., bptbq=1.,),
-        'betabinom_h1_dx10_n1_p1p51q11':
-            # list of sample sizes
-            ([100, 200, 300], ) + make_betabinom_prob(dx=10, n_trial=1, aptbp=5.,
-                                                      bptbp=1, aptbq=1., bptbq=1.,),
-        'betabinom_h0_dx10_n1_p1p11q51':
-            # list of sample sizes
-            ([100, 200, 300], ) + make_betabinom_prob(dx=10, n_trial=1, aptbp=1.,
-                                                      bptbp=1, aptbq=5., bptbq=1.,),
-        'lda_h1_dx100_v100_t3_p1q05':
-            ([100, 200, 300,], ) + make_lda_prob(n_words=100, n_topics=3,
-                                                  vocab_size=100,
-                                                  ptb_p=1., ptb_q=5e-1),
-        'lda_h0_dx100_v100_t3_p05q1':
-            ([100, 200, 300, ], ) + make_lda_prob(n_words=100, n_topics=3,
-                                                  vocab_size=100,
-                                                  ptb_p=5e-1, ptb_q=1.),
         'lda_h0_dx100_v100_t3_p05q06':
             ([100, 200, 300, ], ) + make_lda_prob(n_words=100, n_topics=3,
                                                   vocab_size=100,
@@ -536,16 +559,12 @@ def get_ns_pqrsource(prob_label):
             ([100, 200, 300], ) + make_lda_prob(n_words=100, n_topics=3,
                                                 vocab_size=5,
                                                 ptb_p=1., ptb_q=0.5),
-        'lda_h0_dx50_v100_t3_p05q05':
-            ([100, 200, 300], ) + make_lda_prob(n_words=50, n_topics=3,
-                                                vocab_size=100,
-                                                ptb_p=0.5, ptb_q=0.5),
         'lda_h0_dx50_v100_t3_p1q1':
             ([100, 200, 300, 400], ) + make_lda_prob(n_words=50, n_topics=3,
                                                 vocab_size=100,
                                                 ptb_p=1., ptb_q=1.),
         'lda_h0_dx100_v100_t3_p01q05':
-            ([100, 200, 300], ) + make_lda_prob(n_words=50, n_topics=3,
+            ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
                                                 vocab_size=100,
                                                 ptb_p=0.1, ptb_q=0.5),
         'lda_h1_dx100_v100_t3_p1q05':
@@ -584,15 +603,18 @@ def get_ns_pqrsource(prob_label):
             ([100, 200, 300], ) + make_lda_prob(n_words=50, n_topics=3,
                                                 vocab_size=100,
                                                 ptb_p=1., ptb_q=0.8),
-        'lda_h0_dx10_v5_t3_p05q1':
-            ([100, 200, 300, 500, 800, 1100], ) + make_lda_prob(n_words=10, n_topics=3,
-                                                vocab_size=5,
-                                                ptb_p=5e-1, ptb_q=1.),
-        'lda_h1_dx10_v5_t3_p1q05':
-            ([100, 200, 300, 500, 800, 1100], ) + make_lda_prob(n_words=10, n_topics=3,
-                                                vocab_size=5,
-                                                ptb_p=1., ptb_q=5e-1),
-
+        'lda_h1_dx50_v1000_t3_p1q05temp1':
+            ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
+                                                vocab_size=1000,
+                                                ptb_p=1., ptb_q=0.5, temp=1.),
+        'lda_h1_dx50_v1000_t3_p1q05temp1e-1':
+            ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
+                                                vocab_size=1000,
+                                                ptb_p=1., ptb_q=0.5, temp=0.1),
+        'lda_h1_dx50_v10000_t3_p1q05':
+            ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
+                                                vocab_size=10000,
+                                                ptb_p=1., ptb_q=0.5),
             }  # end of prob2tuples
     if prob_label not in prob2tuples:
         raise ValueError('Unknown problem label. Need to be one of %s'%str(list(prob2tuples.keys()) ))

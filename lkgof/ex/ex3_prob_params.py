@@ -17,7 +17,7 @@ import lkgof.data as data
 import lkgof.kernel as kernel
 import lkgof.util as util
 import lkgof.mctest as mct
-from kmod.mctest import SC_MMD
+from lkgof.mctest import SC_MMD
 from lkgof.goftest import MCParam
 
 
@@ -57,8 +57,8 @@ All the method functions take the following mandatory inputs:
     - A method function may have more arguments which have default values.
 """
 
-
-def sample_pqr(ds_p, ds_q, ds_r, n, r, only_from_r=False):
+def sample_pqr(P, Q, ds_r, n, r, only_from_r=False, 
+               pqr_same_sample_size=False):
     """
     Generate three samples from the three data sources given a trial index r.
     All met_ functions should use this function to draw samples. This is to
@@ -76,8 +76,16 @@ def sample_pqr(ds_p, ds_q, ds_r, n, r, only_from_r=False):
     datr = ds_r.sample(n, seed=r+30)
     if only_from_r:
         return datr
-    datp = ds_p.sample(n, seed=r+1000)
-    datq = ds_q.sample(n, seed=r+2000)
+    ds_p = P.get_datasource()
+    ds_q = Q.get_datasource()
+    if pqr_same_sample_size:
+        n_model_samples = n
+    else:
+        n_burnin_p = burnin_sizes.get(type(P), 500)
+        n_burnin_q = burnin_sizes.get(type(Q), 500)
+        n_model_samples = n + max(n_burnin_p, n_burnin_q) + n_mcsamples
+    datp = ds_p.sample(n_model_samples, seed=r+1000)
+    datq = ds_q.sample(n_model_samples, seed=r+2000)
     return datp, datq, datr
 
 # -------------------------------------------------------
@@ -94,10 +102,8 @@ def met_gmmd_med(P, Q, data_source, r):
         # Not applicable. Return {}.
         return {}
 
-    ds_p = P.get_datasource()
-    ds_q = Q.get_datasource()
     # sample some data 
-    datp, datq, datr = sample_pqr(ds_p, ds_q, data_source, sample_size, r, only_from_r=False)
+    datp, datq, datr = sample_pqr(P, Q, data_source, sample_size, r, only_from_r=False)
 
     # Start the timer here
     with util.ContextTimer() as t:
@@ -225,6 +231,71 @@ def met_dis_gbowlksd_jackknife(P, Q, data_source, r):
     return met_func(P, Q, data_source, sample_size, r)
 
 
+def met_covimqlksd(P, Q, data_source, r, mc_sample=500,
+                  varest=util.second_order_ustat_variance_jackknife,
+                  ):
+    """
+    KSD-based model comparison test for latent variable models.
+    - Use jackknife variance estimator 
+    """
+    # sample some data 
+    datr = sample_pqr(None, None, data_source, sample_size, r, only_from_r=True)
+
+    # Start the timer here
+    with util.ContextTimer() as t:
+        X = datr.data()
+        X_ = X - X.mean(axis=0)
+        cov = np.dot(X_.T, X_)
+        k = kernel.KPIMQ(P=cov)
+
+        n_burnin_p = burnin_sizes.get(type(P), 500)
+        n_burnin_q = burnin_sizes.get(type(Q), 500)
+        mc_param_p = MCParam(mc_sample, n_burnin_p)
+        mc_param_q = MCParam(mc_sample, n_burnin_q)
+        ldcksd = mct.LDC_KSD(P, Q, k, k,
+                             seed=r+11, alpha=alpha,
+                             mc_param_p=mc_param_p, mc_param_q=mc_param_q,
+                             varest=varest,
+        )
+        ldcksd_result = ldcksd.perform_test(datr)
+
+    return {
+            'test_result': ldcksd_result, 'time_secs': t.secs
+            }
+
+
+def met_covimqmmd(P, Q, data_source, r):
+    """
+    Bounliphone et al., 2016's MMD-based 3-sample test.
+    * Gaussian kernel. 
+    * Gaussian width = mean of (median heuristic on (X, Z), median heuristic on
+        (Y, Z))
+    """
+    if not P.has_datasource() or not Q.has_datasource():
+        # Not applicable. Return {}.
+        return {}
+
+    ds_p = P.get_datasource()
+    ds_q = Q.get_datasource()
+    # sample some data 
+    datp, datq, datr = sample_pqr(P, Q, data_source, sample_size, r, only_from_r=False)
+
+    # Start the timer here
+    with util.ContextTimer() as t:
+        X, Y, Z = datp.data(), datq.data(), datr.data()
+        X_ = X - X.mean(axis=0)
+        cov = np.dot(X_.T, X_)
+        k = kernel.KPIMQ(P=cov)
+
+        # hyperparameters of the test
+        scmmd = SC_MMD(datp, datq, k, alpha=alpha)
+        scmmd_result = scmmd.perform_test(datr)
+
+    return {
+            'test_result': scmmd_result, 'time_secs': t.secs
+            }
+
+
 # Define our custom Job, which inherits from base class IndependentJob
 class Ex3Job(IndependentJob):
    
@@ -289,6 +360,9 @@ from lkgof.ex.ex3_prob_params import met_glksd_med_jackknife
 from lkgof.ex.ex3_prob_params import met_glksd_med_mc1000
 from lkgof.ex.ex3_prob_params import met_dis_gbowlksd
 from lkgof.ex.ex3_prob_params import met_dis_gbowlksd_vstat
+from lkgof.ex.ex3_prob_params import met_dis_gbowlksd_jackknife
+from lkgof.ex.ex3_prob_params import met_covimqmmd
+from lkgof.ex.ex3_prob_params import met_covimqlksd
 
 #--- experimental setting -----
 ex = 3
@@ -297,13 +371,13 @@ ex = 3
 alpha = 0.05
 
 # repetitions for each sample size 
-reps = 300
+reps = 100
 
 # sample size 
 sample_size = 100
 
 # num of problems
-num_problems = 1
+num_problems = 10
 
 # burnin size
 burnin_sizes = {
@@ -312,15 +386,21 @@ burnin_sizes = {
     model.LDAEmBayes: 5000,
 }
 
+# Markov chain sample size 
+n_mcsamples = 500
+
 # tests to try
 method_funcs = [ 
     # met_gmmd_med,
     # met_gksd_med,
-    met_glksd_med,
-    met_glksd_med_vstat,
+    # met_glksd_med,
+    # met_glksd_med_vstat,
     # met_glksd_med_jackknife,
     # met_dis_gbowlksd,
     # met_dis_gbowlksd_vstat,
+    # met_dis_gbowlksd_jackknife,
+    met_covimqmmd,
+    met_covimqlksd,
    ]
 
 # If is_rerun==False, do not rerun the experiment if a result file for the current
@@ -424,7 +504,7 @@ def get_params_pqrsource(prob_label):
         'lda_as_dx50_h0_p1':
             [
                 [(ptbq,)+ make_lda_prob(n_words=100, n_topics=3, vocab_size=50, ptb_p=1.,
-                                        ptb_q=1.+ptbq, seed=14+i)
+                                        ptb_q=1.+ptbq, seed=13+i)
                  for ptbq in lda_ps]
                 for i in range(num_problems)
             ],

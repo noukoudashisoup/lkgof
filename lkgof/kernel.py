@@ -388,7 +388,8 @@ class DKLinear(DKSTKernel):
 
     
 class KBoW(DKSTKernel):
-    """Class representing Bag of Words kernels
+    """Class representing Bag of Words kernels.
+    BoW vectors are normalized by the number of words in a document. 
 
     Attribtues:
         n_values: 
@@ -529,6 +530,57 @@ class KGaussBoW(DKSTKernel):
         Kx = np.exp(inner(X, X))
         Ky = np.exp(inner(Y, Y))
         return (K / (Kx * Ky)**0.5)**(1./s2)
+
+
+class KIMQBoW(DKSTKernel):
+    """Class representing the Gaussian kernel defined on
+    Bag-of-Words vectors.
+
+    Attribtues:
+        n_values: 
+            lattice sizes
+        d:
+            dimensionality
+        c (float): a bias parameter
+        b (float): exponenent (b < 0)
+        s2: squared length scale parameter. 
+            Defaults to the squared dimension. 
+    """
+ 
+    def __init__(self, n_values, d, c=1.0, b=-0.5, s2=None):
+        super(KIMQBoW, self).__init__(n_values, d)
+        if not b < 0:
+            raise ValueError('The exponent has to be negative')
+        if not c > 0:
+            raise ValueError('c has to be positive. Was {}'.format(c))
+        self.b = b
+        self.c = c
+        self.s2 = s2 if not (s2 is None) else d**2
+
+    def _load_params(self):
+        return self.b, self.c, self.s2
+
+    def eval(self, X, Y):
+        W = self.n_values[0]
+        X_ = featurize_bow(X, W)
+        Y_ = featurize_bow(Y, W)
+        b, c, s2 = self._load_params()
+
+        X2 = X_.multiply(X_).sum(axis=1) 
+        Y2 = Y_.multiply(Y_).sum(axis=1) 
+        D2 = np.array(X2 + Y2.T - 2.*(X_.dot(Y_.T)))
+        return (c**2+D2/s2)**(b)
+    
+    def pair_eval(self, X, Y):
+        W = self.n_values[0]
+        X_ = featurize_bow(X, W)
+        Y_ = featurize_bow(Y, W)
+        b, c, s2 = self._load_params()
+
+        X2 = X_.multiply(X_).sum(axis=1)
+        Y2 = Y_.multiply(Y_).sum(axis=1)
+        D2 = np.array(X2 + Y2.T - 2.*np.array(X_.multiply(Y_).sum(axis=1)))
+        return (c**2+D2/s2)**(b)
 
 
 class KPIMQ(KSTKernel):

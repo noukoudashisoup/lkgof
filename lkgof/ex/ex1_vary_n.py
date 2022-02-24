@@ -16,7 +16,7 @@ import lkgof.data as data
 # goodness-of-fit test
 import lkgof.kernel as kernel
 import lkgof.util as util
-from kmod.mctest import SC_MMD
+from lkgof.mctest import SC_MMD
 from lkgof.goftest import MCParam
 
 # need independent_jobs package 
@@ -58,7 +58,8 @@ All the method functions take the following mandatory inputs:
 """
 
 
-def sample_pqr(ds_p, ds_q, ds_r, n, r, only_from_r=False):
+def sample_pqr(P, Q, ds_r, n, r, only_from_r=False, 
+               pqr_same_sample_size=False):
     """
     Generate three samples from the three data sources given a trial index r.
     All met_ functions should use this function to draw samples. This is to
@@ -76,8 +77,16 @@ def sample_pqr(ds_p, ds_q, ds_r, n, r, only_from_r=False):
     datr = ds_r.sample(n, seed=r+30)
     if only_from_r:
         return datr
-    datp = ds_p.sample(n, seed=r+1000)
-    datq = ds_q.sample(n, seed=r+2000)
+    ds_p = P.get_datasource()
+    ds_q = Q.get_datasource()
+    if pqr_same_sample_size:
+        n_model_samples = n
+    else:
+        n_burnin_p = burnin_sizes.get(type(P), 500)
+        n_burnin_q = burnin_sizes.get(type(Q), 500)
+        n_model_samples = n + max(n_burnin_p, n_burnin_q) + n_mcsamples
+    datp = ds_p.sample(n_model_samples, seed=r+1000)
+    datq = ds_q.sample(n_model_samples, seed=r+2000)
     return datp, datq, datr
 
 # -------------------------------------------------------
@@ -94,10 +103,8 @@ def met_gmmd_med(P, Q, data_source, n, r):
         # Not applicable. Return {}.
         return {}
 
-    ds_p = P.get_datasource()
-    ds_q = Q.get_datasource()
     # sample some data 
-    datp, datq, datr = sample_pqr(ds_p, ds_q, data_source, n, r, only_from_r=False)
+    datp, datq, datr = sample_pqr(P, Q, data_source, n, r, only_from_r=False)
 
     # Start the timer here
     with util.ContextTimer() as t:
@@ -128,13 +135,12 @@ def met_covimqmmd(P, Q, data_source, n, r):
     ds_p = P.get_datasource()
     ds_q = Q.get_datasource()
     # sample some data 
-    datp, datq, datr = sample_pqr(ds_p, ds_q, data_source, n, r, only_from_r=False)
+    datp, datq, datr = sample_pqr(P, Q, data_source, n, r, only_from_r=False)
 
     # Start the timer here
     with util.ContextTimer() as t:
         X = datr.data()
-        X_ = X - X.mean(axis=0)
-        cov = np.dot(X_.T, X_)
+        cov = np.cov(X, rowvar=False)
         k = kernel.KPIMQ(P=cov)
 
         scmmd = SC_MMD(datp, datq, k, alpha=alpha)
@@ -143,6 +149,33 @@ def met_covimqmmd(P, Q, data_source, n, r):
     return {
             'test_result': scmmd_result, 'time_secs': t.secs}
 
+
+def met_medimqmmd(P, Q, data_source, n, r):
+    """
+    Bounliphone et al., 2016's MMD-based 3-sample test.
+    * Precondition IMQ kernel with sample covariance preconditioner
+    """
+    if not P.has_datasource() or not Q.has_datasource():
+        # Not applicable. Return {}.
+        return {}
+
+    ds_p = P.get_datasource()
+    ds_q = Q.get_datasource()
+    # sample some data 
+    datp, datq, datr = sample_pqr(P, Q, data_source, n, r, only_from_r=False)
+
+    # Start the timer here
+    with util.ContextTimer() as t:
+        X = datr.data()
+        d = X.shape[1]
+        medX = util.dimwise_meddistance(X)
+        k = kernel.KPIMQ(P=np.diag(medX**2))
+
+        scmmd = mct.SC_MMD(datp, datq, k, alpha=alpha)
+        scmmd_result = scmmd.perform_test(datr)
+
+    return {
+            'test_result': scmmd_result, 'time_secs': t.secs}
 
 def met_covimqksd(P, Q, data_source, n, r):
     """
@@ -163,16 +196,46 @@ def met_covimqksd(P, Q, data_source, n, r):
     # Start the timer here
     with util.ContextTimer() as t:
         X = datr.data()
-        X_ = X - X.mean(axis=0)
-        cov = np.dot(X_.T, X_)
+        cov = np.cov(X, rowvar=False)
         k = kernel.KPIMQ(P=cov)
+
+        dcksd = mct.DC_KSD(p, q, k, k, seed=r+11, alpha=alpha, varest=util.second_order_ustat_variance_jackknife)
+        dcksd_result = dcksd.perform_test(datr)
+
+    return {
+            'test_result': dcksd_result,
+            'time_secs': t.secs,
+            }
+
+def met_medimqksd(P, Q, data_source, n, r):
+    """
+    KSD-based model comparison test
+        * One IMQ kernel for the two statistics.
+        * Requires exact marginals of the two models.
+        * Use U-statistic variance estimator
+    """
+    if not P.has_unnormalized_density() or not Q.has_unnormalized_density():
+        # Not applicable. Return {}.
+        return {}
+
+    p = P.get_unnormalized_density()
+    q = Q.get_unnormalized_density()
+    # sample some data 
+    datr = sample_pqr(None, None, data_source, n, r, only_from_r=True)
+
+    # Start the timer here
+    with util.ContextTimer() as t:
+        X = datr.data()
+        d = X.shape[1]
+        medX = util.dimwise_meddistance(X)
+        k = kernel.KPIMQ( np.diag(medX**2) )
 
         dcksd = mct.DC_KSD(p, q, k, k, seed=r+11, alpha=alpha)
         dcksd_result = dcksd.perform_test(datr)
 
     return {
             'test_result': dcksd_result,
-            'time_secs': t.sec
+            'time_secs': t.secs,
             }
 
 
@@ -316,7 +379,7 @@ def met_glksd_med_jackknife(P, Q, data_source, n, r):
                          )
 
 
-def met_covimqlksd(P, Q, data_source, n, r):
+def met_covimqlksd(P, Q, data_source, n, r, mc_sample=500):
     """
     KSD-based model comparison test
         * One preconditioned IMQ kernel for the two statistics.
@@ -329,21 +392,24 @@ def met_covimqlksd(P, Q, data_source, n, r):
     # Start the timer here
     with util.ContextTimer() as t:
         X = datr.data()
-        X_ = X - X.mean(axis=0)
-        cov = np.dot(X_.T, X_)
+        cov = np.cov(X, rowvar=False)
         k = kernel.KPIMQ(P=cov)
 
         n_burnin_p = burnin_sizes.get(type(P), 500)
         n_burnin_q = burnin_sizes.get(type(Q), 500)
+        mc_param_p = MCParam(mc_sample, n_burnin_p)
+        mc_param_q = MCParam(mc_sample, n_burnin_q)
         ldcksd = mct.LDC_KSD(P, Q, k, k,
                              seed=r+11, alpha=alpha,
-                             n_burnin_p=n_burnin_p,
-                             n_burnin_q=n_burnin_q,
+                             mc_param_p=mc_param_p,
+                             mc_param_q=mc_param_q,
                              varest=util.second_order_ustat_variance_jackknife,
-        )
-        dcksd_result = ldcksd.perform_test(datr)
+                             )
 
-    return {'test_result': dcksd_result,
+
+        ldcksd_result = ldcksd.perform_test(datr)
+
+    return {'test_result': ldcksd_result,
             'time_secs': t.secs,
             }
 
@@ -411,7 +477,9 @@ from lkgof.ex.ex1_vary_n import met_glksd_med_mc1000
 from lkgof.ex.ex1_vary_n import met_glksd_med_vstat
 from lkgof.ex.ex1_vary_n import met_glksd_med_jackknife
 from lkgof.ex.ex1_vary_n import met_covimqmmd
+from lkgof.ex.ex1_vary_n import met_medimqmmd
 from lkgof.ex.ex1_vary_n import met_covimqksd
+from lkgof.ex.ex1_vary_n import met_medimqksd
 from lkgof.ex.ex1_vary_n import met_covimqlksd
 
 #--- experimental setting -----
@@ -429,20 +497,24 @@ burnin_sizes = {
     model.DPMIsoGaussBase: 1000,
 }
 
+# Markov chain sample size 
+n_mcsamples = 500
 
 # tests to try
 method_funcs = [ 
-    met_gmmd_med,
+    # met_gmmd_med,
     # met_gksd_med,
     # met_gksd_med_vstat,
-    met_gksd_med_jackknife,
+    # met_gksd_med_jackknife,
     # met_glksd_med,
     # met_glksd_med_mc1000,
     # met_glksd_med_vstat,
-    met_glksd_med_jackknife,
-    # met_covimqmmd,
-    # met_imqksd,
-    # met_imqlksd,
+    # met_glksd_med_jackknife,
+    # met_medimqmmd,
+    met_covimqmmd,
+    # met_medimqksd,
+    met_covimqksd,
+    #met_covimqlksd,
    ]
 
 # If is_rerun==False, do not rerun the experiment if a result file for the current
