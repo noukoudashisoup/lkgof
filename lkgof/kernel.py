@@ -601,8 +601,8 @@ class KPIMQ(KSTKernel):
         if not c > 0:
             raise ValueError('c has to be positive. Was {}'.format(c))
         self.b = b
-        U, s, _ = np.linalg.svd((P+P.T)/2)
-        if np.min(s) <= 1e-8:
+        s, U = np.linalg.eigh((P+P.T)/2)
+        if np.min(s) <= 1e-12:
             raise ValueError('P has to be positive definite')
         self.invsqrtP = U @ np.diag(s**(-0.5)) @ U.T
     

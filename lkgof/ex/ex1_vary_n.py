@@ -92,12 +92,10 @@ def sample_pqr(P, Q, ds_r, n, r, only_from_r=False,
 # -------------------------------------------------------
 
 
-def met_gmmd_med(P, Q, data_source, n, r):
+def _met_mmd(P, Q, data_source, n, r, k,):
     """
-    Bounliphone et al., 2016's MMD-based 3-sample test.
-    * Gaussian kernel. 
-    * Gaussian width = mean of (median heuristic on (X, Z), median heuristic on
-        (Y, Z))
+    Wrapper for MMD model comparison test (relative test). 
+    Different tests can be defined depending on the input kernel k.
     """
     if not P.has_datasource() or not Q.has_datasource():
         # Not applicable. Return {}.
@@ -110,12 +108,6 @@ def met_gmmd_med(P, Q, data_source, n, r):
     with util.ContextTimer() as t:
         X, Y, Z = datp.data(), datq.data(), datr.data()
 
-        # hyperparameters of the test
-        medxz = util.meddistance(np.vstack((X, Z)), subsample=1000)
-        medyz = util.meddistance(np.vstack((Y, Z)), subsample=1000)
-        medxyz = np.mean([medxz, medyz])
-        k = kernel.KGauss(sigma2=medxyz**2)
-
         scmmd = SC_MMD(datp, datq, k, alpha=alpha)
         scmmd_result = scmmd.perform_test(datr)
 
@@ -123,66 +115,71 @@ def met_gmmd_med(P, Q, data_source, n, r):
             'test_result': scmmd_result, 'time_secs': t.secs}
 
 
-def met_covimqmmd(P, Q, data_source, n, r):
+def met_gmmd_med(P, Q, data_source, n, r):
     """
     Bounliphone et al., 2016's MMD-based 3-sample test.
-    * Precondition IMQ kernel with sample covariance preconditioner
+    * Gaussian kernel. 
+    * Gaussian width = mean of (median heuristic on (X, Z), median heuristic on
+        (Y, Z))
     """
     if not P.has_datasource() or not Q.has_datasource():
         # Not applicable. Return {}.
         return {}
 
-    ds_p = P.get_datasource()
-    ds_q = Q.get_datasource()
     # sample some data 
-    datp, datq, datr = sample_pqr(P, Q, data_source, n, r, only_from_r=False)
+    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+    X = kernel_data.data()
 
-    # Start the timer here
-    with util.ContextTimer() as t:
-        X = datr.data()
-        cov = np.cov(X, rowvar=False)
-        k = kernel.KPIMQ(P=cov)
+    # datp, datq, datr = sample_pqr(P, Q, data_source, n, r, only_from_r=False)
+    # X, Y, Z = datp.data(), datq.data(), datr.data()
 
-        scmmd = SC_MMD(datp, datq, k, alpha=alpha)
-        scmmd_result = scmmd.perform_test(datr)
+    # # hyperparameters of the test
+    # medxz = util.meddistance(np.vstack((X, Z)), subsample=1000)
+    # medyz = util.meddistance(np.vstack((Y, Z)), subsample=1000)
+    # medxyz = np.mean([medxz, medyz])
+    medX = util.meddistance(X)
+    k = kernel.KGauss(sigma2=medX**2)
+    scmmd_result = _met_mmd(P, Q, data_source, n, r, k=k,)
+    return scmmd_result
 
-    return {
-            'test_result': scmmd_result, 'time_secs': t.secs}
 
-
-def met_medimqmmd(P, Q, data_source, n, r):
+def met_imqmmd_cov(P, Q, data_source, n, r):
     """
     Bounliphone et al., 2016's MMD-based 3-sample test.
     * Precondition IMQ kernel with sample covariance preconditioner
     """
-    if not P.has_datasource() or not Q.has_datasource():
-        # Not applicable. Return {}.
-        return {}
-
-    ds_p = P.get_datasource()
-    ds_q = Q.get_datasource()
     # sample some data 
-    datp, datq, datr = sample_pqr(P, Q, data_source, n, r, only_from_r=False)
+    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+    X = kernel_data.data()
 
-    # Start the timer here
-    with util.ContextTimer() as t:
-        X = datr.data()
-        d = X.shape[1]
-        medX = util.dimwise_meddistance(X)
-        k = kernel.KPIMQ(P=np.diag(medX**2))
+    cov = np.cov(X, rowvar=False)
+    k = kernel.KPIMQ(P=cov)
+    scmmd_result = _met_mmd(P, Q, data_source, n, r, k=k)
+    return scmmd_result
 
-        scmmd = mct.SC_MMD(datp, datq, k, alpha=alpha)
-        scmmd_result = scmmd.perform_test(datr)
 
-    return {
-            'test_result': scmmd_result, 'time_secs': t.secs}
-
-def met_covimqksd(P, Q, data_source, n, r):
+def met_imqmmd_med(P, Q, data_source, n, r):
     """
-    KSD-based model comparison test
-        * One IMQ kernel for the two statistics.
-        * Requires exact marginals of the two models.
-        * Use U-statistic variance estimator
+    Bounliphone et al., 2016's MMD-based 3-sample test.
+    * IMQ kernel with median scaling
+    """
+    # sample some data
+    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+    X = kernel_data.data()
+    d = X.shape[1]
+    medX = util.meddistance(X)
+    k = kernel.KPIMQ(medX**2 * np.eye(d))
+
+    scmmd_result = _met_mmd(P, Q, data_source, n, r, k=k)
+    return scmmd_result
+
+
+def _met_ksd(P, Q, data_source, n, r, k,
+             varest=util.second_order_ustat_variance_jackknife,
+             ):
+    """
+    Wrapper for LKSD model comparison test (relative test). 
+    Different tests can be defined depending on the input kernel k.
     """
     if not P.has_unnormalized_density() or not Q.has_unnormalized_density():
         # Not applicable. Return {}.
@@ -195,73 +192,6 @@ def met_covimqksd(P, Q, data_source, n, r):
 
     # Start the timer here
     with util.ContextTimer() as t:
-        X = datr.data()
-        cov = np.cov(X, rowvar=False)
-        k = kernel.KPIMQ(P=cov)
-
-        dcksd = mct.DC_KSD(p, q, k, k, seed=r+11, alpha=alpha, varest=util.second_order_ustat_variance_jackknife)
-        dcksd_result = dcksd.perform_test(datr)
-
-    return {
-            'test_result': dcksd_result,
-            'time_secs': t.secs,
-            }
-
-def met_medimqksd(P, Q, data_source, n, r):
-    """
-    KSD-based model comparison test
-        * One IMQ kernel for the two statistics.
-        * Requires exact marginals of the two models.
-        * Use U-statistic variance estimator
-    """
-    if not P.has_unnormalized_density() or not Q.has_unnormalized_density():
-        # Not applicable. Return {}.
-        return {}
-
-    p = P.get_unnormalized_density()
-    q = Q.get_unnormalized_density()
-    # sample some data 
-    datr = sample_pqr(None, None, data_source, n, r, only_from_r=True)
-
-    # Start the timer here
-    with util.ContextTimer() as t:
-        X = datr.data()
-        d = X.shape[1]
-        medX = util.dimwise_meddistance(X)
-        k = kernel.KPIMQ( np.diag(medX**2) )
-
-        dcksd = mct.DC_KSD(p, q, k, k, seed=r+11, alpha=alpha)
-        dcksd_result = dcksd.perform_test(datr)
-
-    return {
-            'test_result': dcksd_result,
-            'time_secs': t.secs,
-            }
-
-
-def met_gksd_med(P, Q, data_source, n, r,
-                 varest=util.second_order_ustat_variance_ustat,
-                 ):
-    """
-    KSD-based model comparison test
-        * One Gaussian kernel for the two statistics.
-        * Requires exact marginals of the two models.
-        * Use U-statistic variance estimator
-    """
-    if not P.has_unnormalized_density() or not Q.has_unnormalized_density():
-        # Not applicable. Return {}.
-        return {}
-
-    p = P.get_unnormalized_density()
-    q = Q.get_unnormalized_density()
-    # sample some data 
-    datr = sample_pqr(None, None, data_source, n, r, only_from_r=True)
-
-    # Start the timer here
-    with util.ContextTimer() as t:
-        medz = util.meddistance(datr.data(), subsample=1000)
-        k = kernel.KGauss(sigma2=medz**2)
-
         dcksd = mct.DC_KSD(p, q, k, k, seed=r+11, alpha=alpha,
                            varest=varest,)
         dcksd_result = dcksd.perform_test(datr)
@@ -272,114 +202,123 @@ def met_gksd_med(P, Q, data_source, n, r,
     }
 
 
-def met_gksd_med_vstat(P, Q, data_source, n, r):
+def met_imqksd_cov(P, Q, data_source, n, r):
     """
     KSD-based model comparison test
-        * One Gaussian kernel for the two statistics.
+        * One covariance-preconditioned IMQ kernel for the two statistics.
         * Requires exact marginals of the two models.
-        * Use V-statistic variance estimator
+        * Use jackknife U-statistic variance estimator
     """
-    return met_gksd_med(P, Q, data_source, n, r,
-                        varest=util.second_order_ustat_variance_vstat,
-                        )
+    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+    X = kernel_data.data()
+    cov = np.cov(X, rowvar=False)
+    k = kernel.KPIMQ(P=cov)
+
+    dcksd_result = _met_ksd(P, Q, data_source, n, r, k=k,)
+    return dcksd_result
 
 
-def met_gksd_med_jackknife(P, Q, data_source, n, r):
+def met_imqksd_med(P, Q, data_source, n, r):
     """
     KSD-based model comparison test
-        * One Gaussian kernel for the two statistics.
+        * One IMQ kernel for the two statistics.
         * Requires exact marginals of the two models.
-        * Use jackknife variance estimator
-    """
-    return met_gksd_med(P, Q, data_source, n, r,
-                        varest=util.second_order_ustat_variance_jackknife,
-                        )
-
-
-def met_glksd_med(P, Q, data_source, n, r, mc_sample=500,
-                  n_burnin_p=None, n_burnin_q=None,
-                  varest=util.second_order_ustat_variance_ustat,
-                  ):
-    """
-    LKSD model comparison test
-        * One Gaussian kernel for the two statistics.
-        * Markov chain sample size: 500
         * Use U-statistic variance estimator
+    """
+    # sample some data 
+    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+
+    X = kernel_data.data()
+    d = X.shape[1]
+    medX = util.meddistance(X)
+    k = kernel.KPIMQ(medX**2 * np.eye(d))
+
+
+    dcksd_result = _met_ksd(P, Q, data_source, n, r, k=k,)
+    return dcksd_result
+
+
+def met_gksd_med(P, Q, data_source, n, r,
+                 varest=util.second_order_ustat_variance_jackknife,
+                 ):
+    """
+    KSD-based model comparison test
+        * One Gaussian kernel for the two statistics.
+        * Requires exact marginals of the two models.
+        * Use jackknife U-statistic variance estimator
+    """
+    # sample some data 
+    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+
+    medz = util.meddistance(kernel_data.data(), subsample=1000)
+    k = kernel.KGauss(sigma2=medz**2)
+
+    dcksd_result = _met_ksd(P, Q, data_source, n, r, k=k)
+    return dcksd_result
+
+
+def _met_lksd(P, Q, data_source, n, r, k,
+              varest=util.second_order_ustat_variance_jackknife):
+    """
+    Wrapper for LKSD model comparison test (relative test). 
+    Different tests can be defined depending on the input kernel k.
     """
     # sample some data 
     datr = sample_pqr(None, None, data_source, n, r, only_from_r=True)
 
     # Start the timer here
     with util.ContextTimer() as t:
-        medz = util.meddistance(datr.data(), subsample=1000)
-        k = kernel.KGauss(sigma2=medz**2)
-        if n_burnin_p is None:
-            n_burnin_p = burnin_sizes.get(type(P), 500)
-        if n_burnin_q is None:
-            n_burnin_q = burnin_sizes.get(type(Q), 500)
-        mc_param_p = MCParam(mc_sample, n_burnin_p)
-        mc_param_q = MCParam(mc_sample, n_burnin_q)
-        ldcksd = mct.LDC_KSD(P, Q, k, k,
-                             seed=r+11, alpha=alpha,
-                             mc_param_p=mc_param_p,
-                             mc_param_q=mc_param_q,
+        n_burnin_p = burnin_sizes.get(type(P), 500)
+        n_burnin_q = burnin_sizes.get(type(Q), 500)
+        mc_param_p = MCParam(n_mcsamples, n_burnin_p)
+        mc_param_q = MCParam(n_mcsamples, n_burnin_q)
+        ldcksd = mct.LDC_KSD(P, Q, k, k, seed=r+11, alpha=alpha,
+                             mc_param_p=mc_param_p, mc_param_q=mc_param_q,
                              varest=varest,
                              )
-        dcksd_result = ldcksd.perform_test(datr)
+        ldcksd_result = ldcksd.perform_test(datr)
 
     return {
-        'test_result': dcksd_result,
-        'time_secs': t.secs,
-        }
+            'test_result': ldcksd_result, 'time_secs': t.secs,
+            }
 
 
-def met_glksd_med_mc10(P, Q, data_source, n, r):
+def met_glksd_med(P, Q, data_source, n, r):
     """
     LKSD model comparison test
         * One Gaussian kernel for the two statistics.
-        * Markov chain sample size: 10
-        * Use U-statistic variance estimator
+        * Use jackknife variance estimator
     """
-    return met_glksd_med(P, Q, data_source, n, r, mc_sample=10)
+    # sample some data 
+    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+    medz = util.meddistance(kernel_data.data(), subsample=1000)
+    k = kernel.KGauss(sigma2=medz**2)
 
+    ldcksd_result =  _met_lksd(P, Q, data_source, n, r, k=k, )
+    return ldcksd_result
+    
 
-def met_glksd_med_mc1000(P, Q, data_source, n, r):
+def met_imqlksd_med(P, Q, data_source, n, r):
     """
-    LKSD model comparison test
-        * One Gaussian kernel for the two statistics.
-        * Markov chain sample size: 1000
-        * Use U-statistic variance estimator
-    """
-    return met_glksd_med(P, Q, data_source, n, r, mc_sample=1000)
-
-
-def met_glksd_med_vstat(P, Q, data_source, n, r):
-    """
-    LKSD model comparison test
-        * One Gaussian kernel for the two statistics.
-        * Markov chain sample size: 500
-        * Use V-statistic variance estimator
+    KSD-based model comparison test
+        * One Median-scaled IMQ kernel for the two statistics.
+        * Use jackknife variance estimator
     """
 
-    return met_glksd_med(P, Q, data_source, n, r,
-                         varest=util.second_order_ustat_variance_vstat,
-                         )
+    # sample some data 
+    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+    X = kernel_data.data()
+    d = X.shape[1]
+    medX = util.meddistance(X)
+    k = kernel.KPIMQ(medX**2 * np.eye(d))
 
 
-def met_glksd_med_jackknife(P, Q, data_source, n, r):
-    """
-    LKSD model comparison test
-        * One Gaussian kernel for the two statistics.
-        * Markov chain sample size: 500
-        * Use a jackknife variance estimator
-    """
 
-    return met_glksd_med(P, Q, data_source, n, r,
-                         varest=util.second_order_ustat_variance_jackknife,
-                         )
+    ldcksd_result = _met_lksd(P, Q, data_source, n, r, k=k,)
+    return ldcksd_result
 
 
-def met_covimqlksd(P, Q, data_source, n, r, mc_sample=500):
+def met_imqlksd_cov(P, Q, data_source, n, r):
     """
     KSD-based model comparison test
         * One preconditioned IMQ kernel for the two statistics.
@@ -387,31 +326,15 @@ def met_covimqlksd(P, Q, data_source, n, r, mc_sample=500):
     """
 
     # sample some data 
-    datr = sample_pqr(None, None, data_source, n, r, only_from_r=True)
+    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
 
-    # Start the timer here
-    with util.ContextTimer() as t:
-        X = datr.data()
-        cov = np.cov(X, rowvar=False)
-        k = kernel.KPIMQ(P=cov)
+    X = kernel_data.data()
+    cov = np.cov(X, rowvar=False)
+    k = kernel.KPIMQ(P=cov)
 
-        n_burnin_p = burnin_sizes.get(type(P), 500)
-        n_burnin_q = burnin_sizes.get(type(Q), 500)
-        mc_param_p = MCParam(mc_sample, n_burnin_p)
-        mc_param_q = MCParam(mc_sample, n_burnin_q)
-        ldcksd = mct.LDC_KSD(P, Q, k, k,
-                             seed=r+11, alpha=alpha,
-                             mc_param_p=mc_param_p,
-                             mc_param_q=mc_param_q,
-                             varest=util.second_order_ustat_variance_jackknife,
-                             )
+    ldcksd_result = _met_lksd(P, Q, data_source, n, r, k=k,)
 
-
-        ldcksd_result = ldcksd.perform_test(datr)
-
-    return {'test_result': ldcksd_result,
-            'time_secs': t.secs,
-            }
+    return ldcksd_result
 
 
 # Define our custom Job, which inherits from base class IndependentJob
@@ -467,26 +390,24 @@ class Ex1Job(IndependentJob):
 # This import is needed so that pickle knows about the class Ex1Job.
 # pickle is used when collecting the results from the submitted jobs.
 from lkgof.ex.ex1_vary_n import Ex1Job
+from lkgof.ex.ex1_vary_n import _met_mmd
+from lkgof.ex.ex1_vary_n import _met_ksd
+from lkgof.ex.ex1_vary_n import _met_lksd
 from lkgof.ex.ex1_vary_n import met_gmmd_med
+from lkgof.ex.ex1_vary_n import met_imqmmd_med
+from lkgof.ex.ex1_vary_n import met_imqmmd_cov
 from lkgof.ex.ex1_vary_n import met_gksd_med
-from lkgof.ex.ex1_vary_n import met_gksd_med_vstat
-from lkgof.ex.ex1_vary_n import met_gksd_med_jackknife
+from lkgof.ex.ex1_vary_n import met_imqksd_med
+from lkgof.ex.ex1_vary_n import met_imqksd_cov
 from lkgof.ex.ex1_vary_n import met_glksd_med
-from lkgof.ex.ex1_vary_n import met_glksd_med_mc10
-from lkgof.ex.ex1_vary_n import met_glksd_med_mc1000
-from lkgof.ex.ex1_vary_n import met_glksd_med_vstat
-from lkgof.ex.ex1_vary_n import met_glksd_med_jackknife
-from lkgof.ex.ex1_vary_n import met_covimqmmd
-from lkgof.ex.ex1_vary_n import met_medimqmmd
-from lkgof.ex.ex1_vary_n import met_covimqksd
-from lkgof.ex.ex1_vary_n import met_medimqksd
-from lkgof.ex.ex1_vary_n import met_covimqlksd
+from lkgof.ex.ex1_vary_n import met_imqlksd_med
+from lkgof.ex.ex1_vary_n import met_imqlksd_cov
 
 #--- experimental setting -----
 ex = 1
 
 # significance level of the test
-alpha = 0.01
+alpha = 0.05
 
 # repetitions for each sample size 
 reps = 300
@@ -502,19 +423,15 @@ n_mcsamples = 500
 
 # tests to try
 method_funcs = [ 
-    # met_gmmd_med,
-    # met_gksd_med,
-    # met_gksd_med_vstat,
-    # met_gksd_med_jackknife,
-    # met_glksd_med,
-    # met_glksd_med_mc1000,
-    # met_glksd_med_vstat,
-    # met_glksd_med_jackknife,
-    # met_medimqmmd,
-    met_covimqmmd,
-    # met_medimqksd,
-    met_covimqksd,
-    #met_covimqlksd,
+    met_gmmd_med,
+    met_gksd_med,
+    met_glksd_med,
+    met_imqmmd_med,
+    met_imqksd_med,
+    met_imqlksd_med,
+    met_imqmmd_cov,
+    met_imqksd_cov,
+    met_imqlksd_cov,
    ]
 
 # If is_rerun==False, do not rerun the experiment if a result file for the current
@@ -638,15 +555,15 @@ def get_ns_pqrsource(prob_label):
         'ppca_h1_dx50_dz10':
             # list of sample sizes
             ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=50, dz=10, ptbp=2.),
-        'ppca_h1_dx50_dz10_p3_q1':
+        'ppca_h1_dx100_dz10':
             # list of sample sizes
-            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=50, dz=10, ptbp=3.),
-        'ppca_h1_dx50_dz10_p15e-1_q1':
+            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=100, dz=10, ptbp=2.),
+        'ppca_h1_dx100_dz10_p3_q1':
             # list of sample sizes
-            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=50, dz=10, ptbp=1.5),
-        'ppca_h0_dx50_dz10_p1_q11e-1':
+            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=100, dz=10, ptbp=3.),
+        'ppca_h0_dx100_dz10_p1_q11e-1':
             # list of sample sizes
-            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=50, dz=10, ptbp=1., ptbq=1.1),
+            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=100, dz=10, ptbp=1., ptbq=1.1),
         'isogdpm_h0_dx10_tr10_p1_q2':
             # list of sample sizes
             ([i*100 for i in range(1, 3+1)], ) + make_dpm_isogauss_prob(tr_size=10, dx=50, ptbp=1., ptbq=2),

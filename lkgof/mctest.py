@@ -30,7 +30,7 @@ class DC_KSD(object):
     - seed: random seed
     - varest:
         Variance estimator method.
-        Defaults to util.second_order_ustat_variance_ustat.
+        Defaults to util.second_order_ustat_variance_jackknife.
     """
 
     def __init__(self, p, q, k, l, seed=11, alpha=0.05,
