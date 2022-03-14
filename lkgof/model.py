@@ -297,12 +297,12 @@ class LDAEmBayes(LatentVariableModel):
 
 
     def score_joint(self, X, latents): 
-        """Evaluate score of the joint at X and latents. 
-        The score is averaged over latent samples provided there 
+        """Evaluate the averaged score function of the joint at X and latents,
+        where the averaging is over latent samples provided there 
         are multiple samples.
 
         This method computes the score function of x
-        with p(x, latents) 
+        with \sum_{i=1}^m score(x, latents_i) / m 
 
         Args:
             X (numpy.ndarray): array of size n x d 

@@ -681,7 +681,7 @@ class KPIMQ(KSTKernel):
         c2D2 = c**2 + D2
         T1 = np.einsum('ij, nmi, nmj->nm', P_, diff, diff)
         T1 = -T1 * 4.0*b*(b-1)*(c2D2**(b-2))
-        T2 = -2.0*b*np.sum(np.diag(P_))*c2D2**(b-1) 
+        T2 = -2.0*b*np.trace(P_)*c2D2**(b-1) 
         return T1 + T2
 
 # end class KPIMQ

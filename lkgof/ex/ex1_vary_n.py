@@ -85,6 +85,8 @@ def sample_pqr(P, Q, ds_r, n, r, only_from_r=False,
         n_burnin_p = burnin_sizes.get(type(P), 500)
         n_burnin_q = burnin_sizes.get(type(Q), 500)
         n_model_samples = n + max(n_burnin_p, n_burnin_q) + n_mcsamples
+        if type(P) is model.PPCA:
+            n_model_samples = n + 5000
     datp = ds_p.sample(n_model_samples, seed=r+1000)
     datq = ds_q.sample(n_model_samples, seed=r+2000)
     return datp, datq, datr
@@ -101,11 +103,11 @@ def _met_mmd(P, Q, data_source, n, r, k,):
         # Not applicable. Return {}.
         return {}
 
-    # sample some data 
-    datp, datq, datr = sample_pqr(P, Q, data_source, n, r, only_from_r=False)
-
     # Start the timer here
     with util.ContextTimer() as t:
+        # sample some data 
+        datp, datq, datr = sample_pqr(P, Q, data_source, n, r, only_from_r=False)
+
         X, Y, Z = datp.data(), datq.data(), datr.data()
 
         scmmd = SC_MMD(datp, datq, k, alpha=alpha)
@@ -119,15 +121,14 @@ def met_gmmd_med(P, Q, data_source, n, r):
     """
     Bounliphone et al., 2016's MMD-based 3-sample test.
     * Gaussian kernel. 
-    * Gaussian width = mean of (median heuristic on (X, Z), median heuristic on
-        (Y, Z))
+    * Gaussian width = median of the sample 
     """
     if not P.has_datasource() or not Q.has_datasource():
         # Not applicable. Return {}.
         return {}
 
     # sample some data 
-    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
     X = kernel_data.data()
 
     # datp, datq, datr = sample_pqr(P, Q, data_source, n, r, only_from_r=False)
@@ -149,7 +150,7 @@ def met_imqmmd_cov(P, Q, data_source, n, r):
     * Precondition IMQ kernel with sample covariance preconditioner
     """
     # sample some data 
-    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
     X = kernel_data.data()
 
     cov = np.cov(X, rowvar=False)
@@ -164,7 +165,7 @@ def met_imqmmd_med(P, Q, data_source, n, r):
     * IMQ kernel with median scaling
     """
     # sample some data
-    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
     X = kernel_data.data()
     d = X.shape[1]
     medX = util.meddistance(X)
@@ -178,7 +179,7 @@ def _met_ksd(P, Q, data_source, n, r, k,
              varest=util.second_order_ustat_variance_jackknife,
              ):
     """
-    Wrapper for LKSD model comparison test (relative test). 
+    Wrapper for KSD model comparison test (relative test). 
     Different tests can be defined depending on the input kernel k.
     """
     if not P.has_unnormalized_density() or not Q.has_unnormalized_density():
@@ -209,7 +210,7 @@ def met_imqksd_cov(P, Q, data_source, n, r):
         * Requires exact marginals of the two models.
         * Use jackknife U-statistic variance estimator
     """
-    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
     X = kernel_data.data()
     cov = np.cov(X, rowvar=False)
     k = kernel.KPIMQ(P=cov)
@@ -226,7 +227,7 @@ def met_imqksd_med(P, Q, data_source, n, r):
         * Use U-statistic variance estimator
     """
     # sample some data 
-    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
 
     X = kernel_data.data()
     d = X.shape[1]
@@ -248,7 +249,7 @@ def met_gksd_med(P, Q, data_source, n, r,
         * Use jackknife U-statistic variance estimator
     """
     # sample some data 
-    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
 
     medz = util.meddistance(kernel_data.data(), subsample=1000)
     k = kernel.KGauss(sigma2=medz**2)
@@ -290,7 +291,7 @@ def met_glksd_med(P, Q, data_source, n, r):
         * Use jackknife variance estimator
     """
     # sample some data 
-    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
     medz = util.meddistance(kernel_data.data(), subsample=1000)
     k = kernel.KGauss(sigma2=medz**2)
 
@@ -306,7 +307,7 @@ def met_imqlksd_med(P, Q, data_source, n, r):
     """
 
     # sample some data 
-    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
     X = kernel_data.data()
     d = X.shape[1]
     medX = util.meddistance(X)
@@ -326,7 +327,7 @@ def met_imqlksd_cov(P, Q, data_source, n, r):
     """
 
     # sample some data 
-    kernel_data = sample_pqr(None, None, data_source, n=1000, r=0, only_from_r=True)
+    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
 
     X = kernel_data.data()
     cov = np.cov(X, rowvar=False)
@@ -407,10 +408,13 @@ from lkgof.ex.ex1_vary_n import met_imqlksd_cov
 ex = 1
 
 # significance level of the test
-alpha = 0.05
+alpha = 0.01
 
 # repetitions for each sample size 
 reps = 300
+
+# kernel data size
+kernel_datasize = 1000
 
 # burnin size
 burnin_sizes = {
@@ -552,18 +556,18 @@ def get_ns_pqrsource(prob_label):
         'ppca_h0_dx50_dz10_p1_q1+1e-10':
             # list of sample sizes
             ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=50, dz=10, ptbp=1., ptbq=1.+1e-10),
-        'ppca_h1_dx50_dz10':
+        'ppca_h1_dx100_dz10':
             # list of sample sizes
-            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=50, dz=10, ptbp=2.),
+            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=100, dz=10, ptbp=2.),
         'ppca_h1_dx100_dz10':
             # list of sample sizes
             ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=100, dz=10, ptbp=2.),
         'ppca_h1_dx100_dz10_p3_q1':
             # list of sample sizes
             ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=100, dz=10, ptbp=3.),
-        'ppca_h0_dx100_dz10_p1_q11e-1':
+        'ppca_h0_dx100_dz10_p1_q1+1e-5':
             # list of sample sizes
-            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=100, dz=10, ptbp=1., ptbq=1.1),
+            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=100, dz=10, ptbp=1., ptbq=1.+1e-5),
         'isogdpm_h0_dx10_tr10_p1_q2':
             # list of sample sizes
             ([i*100 for i in range(1, 3+1)], ) + make_dpm_isogauss_prob(tr_size=10, dx=50, ptbp=1., ptbq=2),

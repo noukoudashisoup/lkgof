@@ -16,33 +16,48 @@ def get_func_tuples():
         (func_name used in the experiments, label name, plot line style)
     """
     func_tuples = [
-            ('met_gmmd_med', 'MMD', 'mo-.',),
-            ('met_imqmmd', 'MMD (IMQ)', 'mv-.',),
-            ('met_dis_hmmd', 'MMD', 'mo-.',),
-            ('met_dis_bowmmd', 'MMD (BoW)', 'ko--',),
-            ('met_dis_nbowmmd', 'MMD (NBoW)', 'ko-.',),
-            ('met_dis_gbowmmd', 'MMD (GBoW)', 'k*-',),
-            ('met_dis_hksd', 'KSD (U-stat var)', 'r*--',),
-            ('met_gksd_med', 'KSD (U-stat var)', 'r*--',),
-            ('met_gksd_med_vstat', 'KSD', 'r*--',),
-            ('met_imqksd', 'KSD (IMQ)', 'rv-.',),
+            ('met_gmmd_med', 'MMD (Gauss-med)', 'mo-.',),
+            ('met_imqmmd_cov', 'MMD (IMQ-cov)', 'mo--',),
+            ('met_imqmmd_med', 'MMD (IMQ-med)', 'mo:',),
+            ('met_gksd_med', 'KSD (Gauss-med)', 'r*-.',),
+            ('met_imqksd_cov', 'KSD (IMQ-cov)', 'r*--',),
+            ('met_imqksd_med', 'KSD (IMQ-med)', 'r*:',),
             ('met_dis_hlksd', 'LKSD', 'gx--',),
-            ('met_glksd_med', 'LKSD (U-stat var)', 'gv--',),
-            # ('met_glksd_med_vstat', 'LKSD (V-stat var)', 'gx-',),
-            ('met_glksd_med_vstat', 'LKSD', 'gx-',),
-            ('met_glksd_med_jackknife', 'LKSD', 'g^-',),
-            ('met_glksd_med_mc10', 'LKSD ($m=10$)', 'gx--',),
-            ('met_glksd_med_mc1000', 'LKSD ($m=1000$)', 'x--',),
-            ('met_imqlksd', 'LKSD (IMQ)', 'gv--',),
-            ('met_dis_bowlksd', 'LKSD (BoW)', 'x--',),
-            ('met_dis_bowlksd_vstat', 'LKSD (BoW, Vstat)', 'gx-',),
-            ('met_dis_nbowlksd_vstat', 'LKSD (NBoW, Vstat)', 'gx-',),
-            # ('met_dis_gbowlksd_vstat', 'LKSD (GBoW, V-stat)', 'gx-',),
-            ('met_dis_gbowlksd_vstat', 'LKSD (GBoW, V-stat)', 'gx-',),
-            ('met_dis_gbowlksd_jackknife', 'LKSD (GBoW, jackknife)', 'g^-',),
-            ('met_dis_gbowlksd', 'LKSD (GBoW U-stat)', 'gv--',),
-            # ('met_dis_gbowlksd', 'LKSD (U-stat)', 'gv--',),
+            ('met_glksd_med', 'LKSD (Gauss-med)', 'gv-.',),
+            ('met_imqlksd_cov', 'LKSD (IMQ-cov)', 'gv--',),
+            ('met_imqlksd_med', 'LKSD (IMQ-med)', 'gv:',),
+
+            ('met_dis_gbowmmd', 'MMD (GBoW)', 'k*-',),
+            ('met_dis_imqbowmmd', 'MMD (IMQBoW)', 'k*-.',),
+            ('met_dis_gbowlksd', 'KSD (Gauss BoW)', 'gv-.',),
+            ('met_dis_imqbowlksd', 'KSD (IMQ BoW)', 'gv:',),
            ]
+
+    func_tuples_mcsize = [
+            ('met_imqlksd_med_mc1', 'MC1', 'gv-'),
+            ('met_imqlksd_med_mc10', 'MC10', 'gv--'),
+            ('met_imqlksd_med_mc100', 'MC100', 'gv:'),
+            ('met_imqlksd_med_mc1000', 'MC1000', 'gv-.'),
+            ('met_dis_imqbowlksd_mc1', 'MC1', 'gv-'),
+            ('met_dis_imqbowlksd_mc10', 'MC10', 'gv--'),
+            ('met_dis_imqbowlksd_mc100', 'MC100', 'gv:'),
+            ('met_dis_imqbowlksd_mc1000', 'MC1000', 'gv-.'),
+    ]
+
+    func_tuples_kernelparams = [
+        ('met_imqlksd', 'LKSD(IMQ)', 'bv'),
+        ('met_glksd', 'LKSD(Gauss)', 'gv'),
+        ('met_imqmmd', 'MMD (IMQ)', 'mo'),
+        ('met_gmmd', 'MMD(Gauss)', 'ko'),
+
+        ('met_imqbowmmd', 'MMD (IMQ BoW)', 'mo'),
+        ('met_gbowmmd', 'LKSD(GBoW)', 'ko'),
+        # ('met_dis_gbowlksd', 'LKSD(Gauss BoW)', 'bv'),
+        # ('met_dis_imqbowlksd', 'LKSD(IMQ BoW)', 'gv'),
+    ]
+
+    func_tuples = (func_tuples + func_tuples_mcsize
+                   + func_tuples_kernelparams)
     return func_tuples
 
 def set_default_matplotlib_options():
@@ -52,7 +67,7 @@ def set_default_matplotlib_options():
         #'weight' : 'bold',
         'size'   : 30
     }
-    matplotlib.rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
+    matplotlib.rc('font', **{'family': 'serif', })
 
 
     # matplotlib.use('cairo')
@@ -226,6 +241,100 @@ def plot_prob_reject(ex, fname, func_xvalues, xlabel, func_title=None,
     else:
         return results
         
+def plot_prob_reject_with_params(ex, fname, func_xvalues, func_parvalues, xlabel, 
+                                 paramname, 
+                                 func_title=None,
+                                 return_plot_values=False):
+    """
+    Plot the empirical probability that the statistic is above the threshold.
+    This can be interpreted as type-1 error (when H0 is true) or test power 
+    (when H1 is true). The plot is against the specified x-axis.
+
+    - ex: experiment number 
+    - fname: file name of the aggregated result
+    - func_xvalues: function taking aggregated results dictionary and return the values 
+        to be used for the x-axis values.            
+    - func_xvalues: function taking aggregated results dictionary and return the values 
+        to be used for variations of a method
+    - xlabel: label of the x-axis. 
+    - func_title: a function: results dictionary -> title of the plot
+    - return_plot_values: if true, also return a PlotValues as the second
+      output value.
+
+    Return loaded results
+    """
+    #from IPython.core.debugger import Tracer 
+    #Tracer()()
+
+    results = glo.ex_load_result(ex, fname)
+
+    def rej_accessor(jr):
+        rej = jr['test_result']['h0_rejected']
+        # When used with vectorize(), making the value float will make the resulting 
+        # numpy array to be of float. nan values can be stored.
+        return float(rej)
+
+    vf_pval = np.vectorize(rej_accessor)
+    
+    jr = results['job_results']
+    rejs = vf_pval(jr)
+    repeats, _, _ , n_methods = jr.shape
+
+    mean_rejs = np.mean(rejs, axis=0)
+    xvalues = func_xvalues(results)
+    parvalues = func_parvalues(results)
+    n_params = len(parvalues)
+
+    line_styles = func_plot_fmt_map()
+    method_labels = get_func2label_map()
+    
+    func_names = [f.__name__ for f in results['method_funcs'] ]
+    plotted_methods = []
+    for i in range(n_methods):    
+        for j in range(n_params):
+            linestyle = (0, (2+j, 1+j, i*2, i*2))
+            # te_proportion = 1.0 - results['tr_proportion']
+            fmt = line_styles[func_names[i]]
+            #plt.errorbar(ns*te_proportion, mean_rejs[:, i], std_pvals[:, i])
+            param = parvalues[j]
+            method_label = method_labels[func_names[i]]
+            method_label = '{label} {name}={param}'.format(label=method_label,
+                                                    name=paramname, param=param)
+            plotted_methods.append(method_label)
+            print(method_label, mean_rejs[:, j, i])
+            #print(method_label, mean_rejs[:, i], np.mean(stats[:, :, i], axis=0), np.std(stats[:, :, i], axis=0))
+            # print('pval', method_label, (pvals[:, :, i]))
+            # print('pval', method_label, np.mean(pvals[:, :, i], axis=0))
+            plt.plot(xvalues, mean_rejs[:, j, i], fmt, label=method_label,
+                     linestyle=linestyle)
+    '''
+    else:
+        # h0 is true 
+        z = stats.norm.isf( (1-confidence)/2.0)
+        for i in range(n_methods):
+            phat = mean_rejs[:, i]
+            conf_iv = z*(phat*(1-phat)/repeats)**0.5
+            #plt.errorbar(test_sizes, phat, conf_iv, fmt=line_styles[i], label=method_labels[i])
+            plt.plot(test_sizes, mean_rejs[:, i], line_styles[i], label=method_labels[i])
+    '''
+            
+    ylabel = 'Rejection rate'
+    plt.ylabel(ylabel)
+    plt.xlabel(xlabel)
+    plt.xticks(np.hstack((xvalues) ))
+    
+    alpha = results['alpha']
+    plt.legend(loc='best')
+    title = '%s. %d trials. $\\alpha$ = %.2g.'%( results['prob_label'],
+            repeats, alpha) if func_title is None else func_title(results)
+    plt.title(title)
+    plt.grid()
+    if return_plot_values:
+        return results, PlotValues(xvalues=xvalues, methods=plotted_methods,
+                plot_matrix=mean_rejs.T)
+    else:
+        return results
+
 
 def plot_runtime(ex, fname, func_xvalues, xlabel, func_title=None):
     results = glo.ex_load_result(ex, fname)
@@ -233,8 +342,12 @@ def plot_runtime(ex, fname, func_xvalues, xlabel, func_title=None):
     vf_pval = np.vectorize(value_accessor)
     # results['job_results'] is a dictionary: 
     # {'test_result': (dict from running perform_test(te) '...':..., }
-    times = vf_pval(results['job_results'])
-    repeats, _, n_methods = results['job_results'].shape
+    jr = results['job_results']
+    if ex == 3 and len(jr.shape) > 3:
+        jr = jr[0]
+
+    times = vf_pval(jr)
+    repeats, _, n_methods = jr.shape
     time_avg = np.mean(times, axis=0)
     time_std = np.std(times, axis=0)
 
@@ -246,7 +359,7 @@ def plot_runtime(ex, fname, func_xvalues, xlabel, func_title=None):
     line_styles = func_plot_fmt_map()
     method_labels = get_func2label_map()
     
-    func_names = [f.__name__ for f in results['method_job_funcs'] ]
+    func_names = [f.__name__ for f in results['method_funcs'] ]
     for i in range(n_methods):    
         # te_proportion = 1.0 - results['tr_proportion']
         fmt = line_styles[func_names[i]]
