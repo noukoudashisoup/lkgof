@@ -325,6 +325,7 @@ from lkgof.ex.ex5_kernel_params import met_dis_imqbowlksd
 from lkgof.ex.ex5_kernel_params import met_dis_gbowlksd
 from lkgof.ex.ex1_vary_n import make_ppca_prob
 from lkgof.ex.ex2_vary_n_disc import make_lda_prob
+from lkgof.ex.ex3_prob_params import make_dpm_isogauss_prob
 
 #--- experimental setting -----
 ex = 5
@@ -351,13 +352,13 @@ n_mcsamples = 500
 # tests to try
 method_funcs = [ 
     met_imqmmd,
-    met_gmmd,
+    # met_gmmd,
     met_imqlksd,
-    met_glksd,
-    #met_imqbowmmd,
-    #met_gbowmmd,
-    #met_dis_imqbowlksd,
-    #met_dis_gbowlksd,
+    # met_glksd,
+    # met_imqbowmmd,
+    # met_gbowmmd,
+    # met_dis_imqbowlksd,
+    # met_dis_gbowlksd,
    ]
 
 # If is_rerun==False, do not rerun the experiment if a result file for the current
@@ -377,6 +378,7 @@ def get_ns_params__pqrsource(prob_label):
     """
     ppca_bandwidths = [10**(i) for i in range(-3, 4+1)]
     lda__bandwidths = [10**(i) for i in range(-6, 3+1)]
+    isogdpm__bandwidths = [10**(i) for i in range(-3, 5+1)]
 
     prob2tuples = { 
         'ppca_h0_dx100_dz10':
@@ -396,6 +398,17 @@ def get_ns_params__pqrsource(prob_label):
             ([100, 200, 300, ], ) + (lda__bandwidths,) +  make_lda_prob(n_words=50, n_topics=3,
                                                 vocab_size=10000,
                                                 ptb_p=1., ptb_q=0.5, temp=1.),
+        'lda_h1_dx50_v10000_t3_p1q05temp1e-1':
+            ([100, 200, 300, ], ) + (lda__bandwidths,) +  make_lda_prob(n_words=50, n_topics=3,
+                                                vocab_size=10000,
+                                                ptb_p=1., ptb_q=0.5, temp=1e-1),
+        'isogdpm_h1_dx10_tr5_p12e-1_q1':
+            # list of sample sizes
+            ([100, 200, 300], ) + (isogdpm__bandwidths,)+make_dpm_isogauss_prob(tr_size=5, dx=10, ptbp=1.2, ptbq=1.),
+        'isogdpm_h1_dx10_tr5_p9e-1_q1':
+            # list of sample sizes
+            ([100, 200, 300], ) + (isogdpm__bandwidths,)+make_dpm_isogauss_prob(tr_size=5, dx=10, ptbp=0.9, ptbq=1.),
+
     }  # end of prob2tuples
     if prob_label not in prob2tuples:
         raise ValueError('Unknown problem label. Need to be one of %s'%str(list(prob2tuples.keys()) ))

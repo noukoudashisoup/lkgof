@@ -372,8 +372,8 @@ method_funcs = [
     # met_gksd_med,
     met_imqlksd_med,
     met_imqmmd_med,
-    met_imqmmd_cov,
-    met_imqlksd_cov,
+    #met_imqmmd_cov,
+    #met_imqlksd_cov,
    ]
 
 # If is_rerun==False, do not rerun the experiment if a result file for the current

@@ -28,9 +28,12 @@ def get_func_tuples():
             ('met_imqlksd_med', 'LKSD (IMQ-med)', 'gv:',),
 
             ('met_dis_gbowmmd', 'MMD (GBoW)', 'k*-',),
-            ('met_dis_imqbowmmd', 'MMD (IMQBoW)', 'k*-.',),
-            ('met_dis_gbowlksd', 'KSD (Gauss BoW)', 'gv-.',),
-            ('met_dis_imqbowlksd', 'KSD (IMQ BoW)', 'gv:',),
+            ('met_dis_imqbowmmd', 'MMD (IMQBoW)', 'k*:',),
+            ('met_dis_imqbowmmd_moremc', 'MMD (IMQBoW) More MC', 'k*--',),
+            ('met_dis_imqbowmmd_cheap', 'MMD (IMQBoW) cheap', 'k*-',),
+            ('met_dis_gbowlksd', 'KSD (Gauss BoW)', 'bv-.',),
+            ('met_dis_imqbowlksd', 'LKSD (IMQ BoW)', 'gv:',),
+            ('met_dis_imqbowlksd_moremc', 'LKSD (IMQ BoW) More MC', 'gp--',),
            ]
 
     func_tuples_mcsize = [
@@ -42,6 +45,7 @@ def get_func_tuples():
             ('met_dis_imqbowlksd_mc10', 'MC10', 'gv--'),
             ('met_dis_imqbowlksd_mc100', 'MC100', 'gv:'),
             ('met_dis_imqbowlksd_mc1000', 'MC1000', 'gv-.'),
+            ('met_dis_imqbowlksd_mc10000', 'MC10000', 'g3-'),
     ]
 
     func_tuples_kernelparams = [
@@ -51,7 +55,7 @@ def get_func_tuples():
         ('met_gmmd', 'MMD(Gauss)', 'ko'),
 
         ('met_imqbowmmd', 'MMD (IMQ BoW)', 'mo'),
-        ('met_gbowmmd', 'LKSD(GBoW)', 'ko'),
+        ('met_gbowmmd', 'MMD (GBoW)', 'ko'),
         # ('met_dis_gbowlksd', 'LKSD(Gauss BoW)', 'bv'),
         # ('met_dis_imqbowlksd', 'LKSD(IMQ BoW)', 'gv'),
     ]
@@ -365,6 +369,7 @@ def plot_runtime(ex, fname, func_xvalues, xlabel, func_title=None):
         fmt = line_styles[func_names[i]]
         #plt.errorbar(ns*te_proportion, mean_rejs[:, i], std_pvals[:, i])
         method_label = method_labels[func_names[i]]
+        print(time_avg[:, i])
         plt.errorbar(xvalues, time_avg[:, i], yerr=time_std[:,i], fmt=fmt,
                 label=method_label)
             

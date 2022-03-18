@@ -250,6 +250,7 @@ class LDAEmBayes(LatentVariableModel):
         assert beta.shape[0] == len(alpha)
         assert beta.shape[1] == self.vocab_size
         self.dim_ = len(n_values)
+        self.betacumsum = np.cumsum(beta, axis=1)
     
     def var_type_disc(self):
         return
@@ -347,11 +348,12 @@ class LDAEmBayes(LatentVariableModel):
                                       n_burnin=n_burnin)
         return {'Z': Z_batch}
                             
-    def sample(self, n, seed=13, return_latent=False):
+    def sample(self, n, seed=13, return_latent=False, ):
         alpha = self.alpha
         beta = self.beta
         n_topics = len(alpha)
         n_words = self.dim
+        betacumsum = self.betacumsum
 
         drclt = stats.dirichlet
         if return_latent:
@@ -364,7 +366,8 @@ class LDAEmBayes(LatentVariableModel):
                 if return_latent:
                     Z_.append(Z)
                 phi_ = beta[Z]
-                X[i] = random_choice_prob_index(phi_)
+                r = np.random.rand(n_words, 1)
+                X[i] = (r < betacumsum[Z]).argmax(axis=1)
         if return_latent:
             return Data(X), Data(np.array(Z_))
         return Data(X)
@@ -479,15 +482,21 @@ class DPMIsoGaussBase(LatentVariableModel):
 
 def main():
     from lkgof import mcmc
-    n_doc = 10
-    n_words = 1000
+    n_doc = 1000
+    n_words = 100
     n_topics = 3
     vocab_size = 1000
     alpha = np.ones(n_topics)
     drclt = stats.dirichlet(alpha=np.ones(vocab_size))
     beta = drclt.rvs(size=n_topics)
     lda = LDAEmBayes(alpha, beta, vocab_size*np.ones(n_words))
-    X, Z = lda.sample(n_doc, return_latent=True)
+    with util.ContextTimer() as t:
+        X, Z = lda.sample(n_doc, return_latent=True)
+    print("new mode: {}".format(t.secs))
+    with util.ContextTimer() as t:
+        X, Z = lda.sample(n_doc, return_latent=True, oldmode=True)
+    print("old mode: {}".format(t.secs))
+    return None
     X = X.data()
     Z_init = np.random.randint(0, n_topics, [n_doc, n_words])
     with util.ContextTimer() as t:

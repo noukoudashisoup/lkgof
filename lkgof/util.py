@@ -22,10 +22,43 @@ def onehot_encode(X, n_values):
 
 # https://stackoverflow.com/questions/47722005/vectorizing-numpy-random-choice-for-given-2d-array-of-probabilities-along-an-a
 def random_choice_prob_index(a):
+    """Sampling from an array of probability vectors. 
+    Where the last dimension of the array represents the object index over which
+    the probability is defined.
+    If a' shape is (d_1, ..., d_{K-1}, d_K), then the probability is over
+    d_K objects.  
+
+    Args:
+        a (ndarray): probability tensor. a.sum(axis=d_K) should be all one. 
+
+    Returns:
+        Sample from a: ndarray of size (d_1, ...,d_{K-1}).
+    """
     # r = np.expand_dims(np.random.rand(a.shape[1-axis]), axis=axis)
     axis = len(a.shape) - 1
     r = np.expand_dims(np.random.rand(*a.shape[:-1]), axis=axis)
     return (a.cumsum(axis=axis) > r).argmax(axis=axis)
+
+
+def random_choice(a, n):
+    """Sampling n samples from an array of probability vectors. 
+    Where the last dimension of the array represents the object index over which
+    the probability is defined.
+    If a' shape is (d_1, ..., d_{K-1}, d_K), then the probability is over
+    d_K objects.  
+
+    Args:
+        a (ndarray): probability tensor. a.sum(axis=d_K) should be all one. 
+
+    Returns:
+        Sample from a: ndarray of size (n, d_1, ...,d_{K-1}).
+        where each element takes values in {0, ..., d_K-1}.
+    """
+    # r = np.expand_dims(np.random.rand(a.shape[1-axis]), axis=axis)
+    axis = len(a.shape) - 1
+    r = np.expand_dims(np.random.rand(*a.shape[:-1], n), axis=axis)
+    cumsum = np.expand_dims(a.cumsum(axis=axis), axis=-1)
+    return (r < cumsum).argmax(axis=axis).T
 
 
 def choice(a, n):
@@ -147,6 +180,19 @@ def featurize_bow(X, W):
     X_ = sparse.csr_matrix((data, indices, indptr), shape=(n, W))
     return X_
      
+def test_sample():
+    N = 3
+    K = 5
+    T = 10
+    p = np.zeros([N,K])
+    p[:N, :N] = np.eye(N)
+    samples = []
+    for i in range(T):
+        samples.append(random_choice_prob_index(p))
+    sample = np.array(samples)
+    sample_ = random_choice(p, T)
+    print(sample)
+    print(sample_)
 
 def main():
     n = 10
@@ -158,4 +204,5 @@ def main():
     print(meds)
 
 if __name__ == '__main__':
-    main()
+    test_sample()
+    # main()

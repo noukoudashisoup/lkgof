@@ -138,6 +138,9 @@ def met_imqlksd_med_mc100(P, Q, data_source, b, r):
 def met_imqlksd_med_mc1000(P, Q, data_source, b, r):
     return met_imqlksd_med_mc1(P, Q, data_source, b, r, mcsize=1000)
 
+def met_imqlksd_med_mc10000(P, Q, data_source, b, r):
+    return met_imqlksd_med_mc1(P, Q, data_source, b, r, mcsize=10000)
+
 
 def met_dis_imqbowlksd_mc1(P, Q, data_source, b, r, mcsize=1):
     """
@@ -163,7 +166,8 @@ def met_dis_imqbowlksd_mc100(P, Q, data_source, b, r):
 def met_dis_imqbowlksd_mc1000(P, Q, data_source, b, r):
     return met_dis_imqbowlksd_mc1(P, Q, data_source, b, r, mcsize=1000)
 
-
+def met_dis_imqbowlksd_mc10000(P, Q, data_source, b, r):
+    return met_dis_imqbowlksd_mc1(P, Q, data_source, b, r, mcsize=10000)
 
 
 # Define our custom Job, which inherits from base class IndependentJob
@@ -224,13 +228,16 @@ from lkgof.ex.ex4_vary_mcsizes import met_imqlksd_med_mc1
 from lkgof.ex.ex4_vary_mcsizes import met_imqlksd_med_mc10
 from lkgof.ex.ex4_vary_mcsizes import met_imqlksd_med_mc100
 from lkgof.ex.ex4_vary_mcsizes import met_imqlksd_med_mc1000
+from lkgof.ex.ex4_vary_mcsizes import met_imqlksd_med_mc10000
 from lkgof.ex.ex4_vary_mcsizes import met_dis_imqbowlksd_mc1
 from lkgof.ex.ex4_vary_mcsizes import met_dis_imqbowlksd_mc10
 from lkgof.ex.ex4_vary_mcsizes import met_dis_imqbowlksd_mc100
 from lkgof.ex.ex4_vary_mcsizes import met_dis_imqbowlksd_mc1000
+from lkgof.ex.ex4_vary_mcsizes import met_dis_imqbowlksd_mc10000
 
 from lkgof.ex.ex2_vary_n_disc import make_lda_prob
 from lkgof.ex.ex1_vary_n import make_ppca_prob
+from lkgof.ex.ex3_prob_params import make_dpm_isogauss_prob
 
 
 
@@ -247,7 +254,7 @@ reps = 300
 kernel_datasize = 1000
 
 # sample size 
-sample_size = 300
+sample_size = 100
 
 # tests to try
 method_funcs = [ 
@@ -259,6 +266,7 @@ method_funcs = [
     # met_dis_imqbowlksd_mc10,
     # met_dis_imqbowlksd_mc100,
     # met_dis_imqbowlksd_mc1000,
+    # met_dis_imqbowlksd_mc10000,
    ]
 
 # If is_rerun==False, do not rerun the experiment if a result file for the current
@@ -279,6 +287,7 @@ def get_bs_pqrsource(prob_label):
     """
     ppca_burnins = [50*i for i in range(1, 10+1)]
     lda_burnins = [500*i for i in range(1, 8+1)]
+    gdpm_burnins = [200*i for i in range(1, 9+1)]
 
     prob2tuples = { 
         'ppca_h0_dx100_dz10_p1_q1+1e-5':
@@ -312,6 +321,13 @@ def get_bs_pqrsource(prob_label):
             (lda_burnins, ) + make_lda_prob(n_words=50, n_topics=3,
                                             vocab_size=10000,
                                             ptb_p=1.0, ptb_q=0.5, temp=1),
+        'lda_h1_dx50_v10000_t3_p1q05temp1e-1':
+            (lda_burnins, ) + make_lda_prob(n_words=50, n_topics=3,
+                                            vocab_size=10000,
+                                            ptb_p=1.0, ptb_q=0.5, temp=1e-1),
+        'isogdpm_h1_dx10_tr5_p12e-1_q1':
+            # list of sample sizes
+            (gdpm_burnins, ) + make_dpm_isogauss_prob(tr_size=5, dx=10, ptbp=1.2, ptbq=1.),
         }  # end of prob2tuples
     if prob_label not in prob2tuples:
         raise ValueError('Unknown problem label. Need to be one of %s'%str(list(prob2tuples.keys()) ))

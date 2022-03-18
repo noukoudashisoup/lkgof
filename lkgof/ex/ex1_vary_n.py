@@ -140,6 +140,8 @@ def met_gmmd_med(P, Q, data_source, n, r):
     # medxyz = np.mean([medxz, medyz])
     medX = util.meddistance(X)
     k = kernel.KGauss(sigma2=medX**2)
+    print(medX)
+    exit()
     scmmd_result = _met_mmd(P, Q, data_source, n, r, k=k,)
     return scmmd_result
 
@@ -428,14 +430,14 @@ n_mcsamples = 500
 # tests to try
 method_funcs = [ 
     met_gmmd_med,
-    met_gksd_med,
-    met_glksd_med,
-    met_imqmmd_med,
-    met_imqksd_med,
-    met_imqlksd_med,
-    met_imqmmd_cov,
-    met_imqksd_cov,
-    met_imqlksd_cov,
+    # met_gksd_med,
+    # met_glksd_med,
+    # met_imqmmd_med,
+    # met_imqksd_med,
+    # met_imqlksd_med,
+    # met_imqmmd_cov,
+    # met_imqksd_cov,
+    # met_imqlksd_cov,
    ]
 
 # If is_rerun==False, do not rerun the experiment if a result file for the current
@@ -603,12 +605,12 @@ def run_problem(prob_label):
         foldername=foldername, job_name_base="e%d_"%ex, parameter_prefix="")
 
     # Use the following line if Slurm queue is not used.
-    # engine = SerialComputationEngine()
-    partitions = expr_configs['slurm_partitions']
-    if partitions is None:
-        engine = SlurmComputationEngine(batch_parameters)
-    else:
-        engine = SlurmComputationEngine(batch_parameters, partition=partitions)
+    engine = SerialComputationEngine()
+    # partitions = expr_configs['slurm_partitions']
+    # if partitions is None:
+    #     engine = SlurmComputationEngine(batch_parameters)
+    # else:
+    #     engine = SlurmComputationEngine(batch_parameters, partition=partitions)
     n_methods = len(method_funcs)
 
     # problem setting
