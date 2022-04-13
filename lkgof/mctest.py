@@ -64,7 +64,7 @@ class DC_KSD(object):
             )
             if scale <= 1e-7:
                 (('SD of the null distribution is too small.'
-                  'Was {}. Will not reject H0.').format(scale))
+                  'Was {}.').format(scale))
                 pval = np.inf
             else:
                 # Assume the mean of the null distribution is 0

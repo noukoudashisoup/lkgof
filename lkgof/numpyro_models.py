@@ -123,12 +123,12 @@ class PPCA(NumPyroModel):
         joint_score0 = np.mean(batched_joint_scores, axis=1) - estimated_score
         return onp.array(estimated_score), onp.array(joint_score0)
 
-    def infer_latent(self, X, num_samples=500, num_warmup=200, seed=17):
+    def infer_latent(self, X, num_samples=500, num_warmup=200, init_params=None, seed=17):
         n, d = X.shape
         X_ = np.array(X)
         nuts_kernel = NUTS(self.model)
         mcmc = MCMC(nuts_kernel, num_samples=num_samples,
                     num_warmup=num_warmup, progress_bar=False)
-        mcmc.run(random.PRNGKey(seed), X_)
+        mcmc.run(random.PRNGKey(seed), X_, init_params=init_params)
         Z = mcmc.get_samples()['latent']
         return {'latent': onp.array(Z)}

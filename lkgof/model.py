@@ -171,11 +171,11 @@ class PPCA(LatentVariableModel):
         return self.dim_
     
     def posterior(self, X, n_sample, seed=13,
-                  n_burnin=200):
+                  n_burnin=200, init_params=None):
         np_model = self.get_numpyro_model()
         return np_model.infer_latent(X, num_samples=n_sample, 
                                      num_warmup=n_burnin,
-                                     seed=seed)
+                                     seed=seed, init_params=init_params)
 
 
 class BetaBinomSinglePrior(LatentVariableModel):
@@ -251,6 +251,8 @@ class LDAEmBayes(LatentVariableModel):
         assert beta.shape[1] == self.vocab_size
         self.dim_ = len(n_values)
         self.betacumsum = np.cumsum(beta, axis=1)
+        self.rvds = [stats.rv_discrete(values=(np.arange(self.vocab_size), beta[j]))
+                     for j in range(self.n_topics)]
     
     def var_type_disc(self):
         return
@@ -348,12 +350,12 @@ class LDAEmBayes(LatentVariableModel):
                                       n_burnin=n_burnin)
         return {'Z': Z_batch}
                             
-    def sample(self, n, seed=13, return_latent=False, ):
+    def sample(self, n, seed=13, return_latent=False, old=True):
         alpha = self.alpha
-        beta = self.beta
         n_topics = len(alpha)
         n_words = self.dim
         betacumsum = self.betacumsum
+        rvds = self.rvds 
 
         drclt = stats.dirichlet
         if return_latent:
@@ -364,8 +366,11 @@ class LDAEmBayes(LatentVariableModel):
             for i in range(n):
                 Z = np.random.choice(n_topics, size=n_words, p=theta[i])
                 if return_latent:
-                    Z_.append(Z)
-                phi_ = beta[Z]
+                     Z_.append(Z)
+                # if not old:
+                    # for j in range(n_words):
+                        # X[i, j] = rvds[Z[j]].rvs(1)
+                # else:
                 r = np.random.rand(n_words, 1)
                 X[i] = (r < betacumsum[Z]).argmax(axis=1)
         if return_latent:
