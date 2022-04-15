@@ -6,7 +6,7 @@ from lkgof import model
 import lkgof.util as util
 import numpy as np
 from typing import NamedTuple
-
+from lkgof.stein import stein_kernel_gram
 
 class KernelSteinTest(gof.KernelSteinTest):
 
@@ -44,21 +44,8 @@ class KernelSteinTest(gof.KernelSteinTest):
         n, d = X.shape
         # n x d matrix of gradients
         score_p = p.score(X)
-        # n x n
-        gram_score_p = score_p.dot(score_p.T)
-        # n x n
-        K = k.eval(X, X)
+        return stein_kernel_gram(X, score_p, k)
 
-        B = np.zeros((n, n))
-        C = np.zeros((n, n))
-        for i in range(d):
-            score_p_i = score_p[:, i]
-            B += k.gradX_Y(X, X, i) * score_p_i
-            C += (k.gradY_X(X, X, i).T * score_p_i).T
-
-        H = K*gram_score_p + B + C + k.gradXY_sum(X, X)
-        return H
-    
     def compute_stat(self, dat, return_ustat_gram=False):
         """
         Compute the U statistic as in Section 4 of Liu et al.., 2016.
@@ -108,36 +95,6 @@ class LKSDH0SimNaiveBoot(gof.H0Simulator):
         return {'sim_stats': sim_stats}
 
 
-def stein_kernel_gram(X, score, k):
-    """
-    Compute the Stein kernel gram matrix hp(x_i, x_j)
-    Args: 
-        - X: an n x d data numpy array
-        - score: n x d numpy array; score evaluated at X
-        - k: a KST/DKST object
-    Return:
-        - an n x n array
-    """
-    n, d = X.shape
-    # print('Shape of X')
-    # print(X.shape)
-    # n x d matrix of gradients
-    # n x n
-    gram_score_p = score.dot(score.T)
-    # print(np.sum(np.ones([n,n])[gram_score_p<0])/n**2-1./n)
-    # n x n
-    K = k.eval(X, X)
-
-    B = np.zeros((n, n))
-    C = np.zeros((n, n))
-    for i in range(d):
-        score_p_i = score[:, i]
-        B += k.gradX_Y(X, X, i) * score_p_i
-        C += (k.gradY_X(X, X, i).T * score_p_i).T
-    H = K*gram_score_p + B + C + k.gradXY_sum(X, X)
-    return H
-
-
 def eval_score(X, lvm,
                post_sampler,
                seed=13, n_burnin=500,
@@ -148,7 +105,6 @@ def eval_score(X, lvm,
                            )
     score_p = lvm.score_joint(X, latents)
     return score_p
-
 
 class MCParam(NamedTuple):
     """A class representing parameters
