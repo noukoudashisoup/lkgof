@@ -583,6 +583,37 @@ class KIMQBoW(DKSTKernel):
         return (c**2+D2/s2)**(b)
 
 
+class KExpBoW(DKSTKernel):
+    """Class representing the exponentiated dot-product kernel defined on
+    Bag-of-Words vectors.
+
+    Attribtues:
+        n_values: 
+            lattice sizes
+        d:
+            dimensionality
+    """
+ 
+    def __init__(self, n_values, d, s2=1.0):
+        super(KExpBoW, self).__init__(n_values, d)
+        self.kbow = KBoW(n_values, d)
+        self.s2 = s2
+    
+    def eval(self, X, Y):
+        kbow = self.kbow
+        eval = kbow.eval
+        pair_eval = kbow.pair_eval
+        s2 = self.s2
+        K = np.exp(eval(X, Y))
+        return K**(1./s2)
+    
+    def pair_eval(self, X, Y):
+        inner = self.kbow.pair_eval
+        s2 = self.s2
+        K = np.exp(inner(X, Y))
+        return K**(1./s2)
+
+
 class KPIMQ(KSTKernel):
     
     def __init__(self, P, c=1.0, b=-0.5):
