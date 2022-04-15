@@ -27,41 +27,58 @@ def get_func_tuples():
             ('met_imqlksd_cov', 'LKSD (IMQ-cov)', 'gv--',),
             ('met_imqlksd_med', 'LKSD (IMQ-med)', 'gv:',),
 
-            ('met_dis_gbowmmd', 'MMD (GBoW)', 'k*-',),
-            ('met_dis_imqbowmmd', 'MMD (IMQBoW)', 'k*:',),
-            ('met_dis_imqbowmmd_moremc', 'MMD (IMQBoW) More MC', 'k*--',),
-            ('met_dis_imqbowmmd_cheap', 'MMD (IMQBoW) cheap', 'k*-',),
+            ('met_dis_gbowmmd', 'MMD (GBoW)', 'mo-',),
+            ('met_dis_imqbowmmd', 'MMD (IMQ BoW)', 'mo:',),
+            ('met_dis_imqbowmmd_moremc', 'MMD (IMQBoW) More MC', 'mo--',),
+            ('met_dis_imqbowmmd_cheap', 'MMD (IMQBoW) cheap', 'mo-',),
             ('met_dis_gbowlksd', 'KSD (Gauss BoW)', 'bv-.',),
+            ('met_dis_ebowlksd', 'KSD (Exp BoW)', 'C1v--',),
             ('met_dis_imqbowlksd', 'LKSD (IMQ BoW)', 'gv:',),
             ('met_dis_imqbowlksd_moremc', 'LKSD (IMQ BoW) More MC', 'gp--',),
            ]
 
     func_tuples_mcsize = [
             ('met_imqlksd_med_mc1', 'MC1', 'gv-'),
-            ('met_imqlksd_med_mc10', 'MC10', 'gv--'),
-            ('met_imqlksd_med_mc100', 'MC100', 'gv:'),
-            ('met_imqlksd_med_mc1000', 'MC1000', 'gv-.'),
+            ('met_imqlksd_med_mc10', 'MC10', 'g<--'),
+            ('met_imqlksd_med_mc100', 'MC100', 'g^-.'),
+            ('met_imqlksd_med_mc1000', 'MC1000', 'g>:'),
+            ('met_imqlksd_med_mala_mc1', 'MALA MC1', 'C0v-'),
+            ('met_imqlksd_med_mala_mc10', 'MALA MC10', 'C0<-.'),
+            ('met_imqlksd_med_mala_mc100', 'MALA MC100', 'C0^--'),
+            ('met_imqlksd_med_mala_mc1000', 'MALA MC1000', 'C0>:'),
+            ('met_dis_imqbowlksd_mc1', 'MC1', 'gv-'),
+
             ('met_dis_imqbowlksd_mc1', 'MC1', 'gv-'),
             ('met_dis_imqbowlksd_mc10', 'MC10', 'gv--'),
-            ('met_dis_imqbowlksd_mc100', 'MC100', 'gv:'),
-            ('met_dis_imqbowlksd_mc1000', 'MC1000', 'gv-.'),
+            ('met_dis_imqbowlksd_mc100', 'MC100', 'gv-.'),
+            ('met_dis_imqbowlksd_mc1000', 'MC1000', 'gv:'),
             ('met_dis_imqbowlksd_mc10000', 'MC10000', 'g3-'),
     ]
 
-    func_tuples_kernelparams = [
-        ('met_imqlksd', 'LKSD(IMQ)', 'bv'),
-        ('met_glksd', 'LKSD(Gauss)', 'gv'),
-        ('met_imqmmd', 'MMD (IMQ)', 'mo'),
-        ('met_gmmd', 'MMD(Gauss)', 'ko'),
-
-        ('met_imqbowmmd', 'MMD (IMQ BoW)', 'mo'),
-        ('met_gbowmmd', 'MMD (GBoW)', 'ko'),
-        # ('met_dis_gbowlksd', 'LKSD(Gauss BoW)', 'bv'),
-        # ('met_dis_imqbowlksd', 'LKSD(IMQ BoW)', 'gv'),
+    func_tuples_varests = [
+        ('met_imqlksd_med', 'LKSD (Jackknife)', 'gv--',),
+        ('met_imqlksd_med_ustatvar', 'LKSD (U-stat)', 'g8-.',),
+        ('met_imqlksd_med_vstatvar', 'LKSD (V-stat)', 'gs:',),
+        ('met_dis_imqbowlksd', 'LKSD (Jackknife)', 'gv--',),
+        ('met_dis_imqbowlksd_ustatvar', 'LKSD (U-stat)', 'g8-.',),
+        ('met_dis_imqbowlksd_vstatvar', 'LKSD (V-stat)', 'gs:',),
     ]
 
-    func_tuples = (func_tuples + func_tuples_mcsize
-                   + func_tuples_kernelparams)
+    func_tuples_kernelparams = [
+        ('met_imqlksd', 'LKSD(IMQ)', 'gv'),
+        ('met_glksd', 'LKSD(Gauss)', 'bs'),
+        ('met_imqmmd', 'MMD (IMQ)', 'mx'),
+        ('met_gmmd', 'MMD(Gauss)', 'ko'),
+
+        ('met_imqbowmmd', 'MMD (IMQ BoW)', 'mx'),
+        ('met_gbowmmd', 'MMD (GBoW)', 'ko'),
+        ('met_dis_gbowlksd', 'LKSD(Gauss BoW)', 'bs'),
+        ('met_dis_imqbowlksd', 'LKSD(IMQ BoW)', 'gv'),
+    ]
+
+    # func_tuples += func_tuples_varests
+    # func_tuples += func_tuples_mcsize
+    # func_tuples += func_tuples_kernelparams
     return func_tuples
 
 def set_default_matplotlib_options():
@@ -216,7 +233,7 @@ def plot_prob_reject(ex, fname, func_xvalues, xlabel, func_title=None,
         print(method_label, mean_rejs[:, i], np.mean(stats[:, :, i], axis=0), np.std(stats[:, :, i], axis=0))
         # print('pval', method_label, (pvals[:, :, i]))
         print('pval', method_label, np.mean(pvals[:, :, i], axis=0))
-        plt.plot(xvalues, mean_rejs[:, i], fmt, label=method_label)
+        plt.plot(xvalues, mean_rejs[:, i], fmt, label=method_label, fillstyle='none')
     '''
     else:
         # h0 is true 
@@ -310,7 +327,7 @@ def plot_prob_reject_with_params(ex, fname, func_xvalues, func_parvalues, xlabel
             # print('pval', method_label, (pvals[:, :, i]))
             # print('pval', method_label, np.mean(pvals[:, :, i], axis=0))
             plt.plot(xvalues, mean_rejs[:, j, i], fmt, label=method_label,
-                     linestyle=linestyle)
+                     linestyle=linestyle, fillstyle='none')
     '''
     else:
         # h0 is true 

@@ -98,6 +98,7 @@ def sample_pqr(P, Q, rdata, n, r, only_from_r=False,
         n_burnin = max(n_burnin_p, n_burnin_q,) if add_burnin else 0
         n_model_samples = n + n_burnin + mc_sample
         n_model_samples = min(n_model_samples, nmax)
+        logger.info('n_model_samples: {}'.format(n_model_samples))
     datp = ds_p.sample(n_model_samples, seed=r+1000)
     datq = ds_q.sample(n_model_samples, seed=r+2000)
     return datp, datq, datr
@@ -173,7 +174,7 @@ def met_dis_gbowmmd(P, Q, data_source, n, r):
         raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
     n_values = P.n_values
     d = P.dim
-    k = kernel.KGaussBoW(n_values, d, s2=d**2)
+    k = kernel.KGaussBoW(n_values, d, s2=1)
     result = _met_dis_mmd(P, Q, data_source, n, r, k)
     return result
 
@@ -188,7 +189,7 @@ def met_dis_imqbowmmd(P, Q, data_source, n, r):
         raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
     n_values = P.n_values
     d = P.dim
-    k = kernel.KIMQBoW(n_values, d, s2=d**2)
+    k = kernel.KIMQBoW(n_values, d, s2=1)
     result = _met_dis_mmd(P, Q, data_source, n, r, k)
     return result
 
@@ -202,7 +203,7 @@ def met_dis_imqbowmmd_moremc(P, Q, data_source, n, r):
         raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
     n_values = P.n_values
     d = P.dim
-    k = kernel.KIMQBoW(n_values, d, s2=d**2)
+    k = kernel.KIMQBoW(n_values, d, s2=1)
     result = _met_dis_mmd(P, Q, data_source, n, r, k, mc_sample=10000+n_mcsamples)
     return result
 
@@ -216,8 +217,8 @@ def met_dis_imqbowmmd_cheap(P, Q, data_source, n, r):
         raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
     n_values = P.n_values
     d = P.dim
-    k = kernel.KIMQBoW(n_values, d, s2=d**2)
-    result = _met_dis_mmd(P, Q, data_source, n, r, k, add_mcsample=False, add_burnin=False)
+    k = kernel.KIMQBoW(n_values, d, s2=1)
+    result = _met_dis_mmd(P, Q, data_source, n, r, k, mc_sample=500, add_mcsample=True, add_burnin=False)
     return result
 
 
@@ -344,7 +345,7 @@ def met_dis_gbowlksd(P, Q, data_source, n, r):
     n_values = P.n_values
     d = P.dim
 
-    k = kernel.KGaussBoW(n_values, d, s2=d**2)
+    k = kernel.KGaussBoW(n_values, d, s2=1)
     result = _met_dis_lksd(P, Q, data_source, n, r, k, )
     return result
 
@@ -360,7 +361,7 @@ def met_dis_imqbowlksd(P, Q, data_source, n, r):
     n_values = P.n_values
     d = P.dim
 
-    k = kernel.KIMQBoW(n_values, d, s2=d**2)
+    k = kernel.KIMQBoW(n_values, d, s2=1)
     result = _met_dis_lksd(P, Q, data_source, n, r, k, )
     return result
 
@@ -377,7 +378,7 @@ def met_dis_imqbowlksd_moremc(P, Q, data_source, n, r):
     n_values = P.n_values
     d = P.dim
 
-    k = kernel.KIMQBoW(n_values, d, s2=d**2)
+    k = kernel.KIMQBoW(n_values, d, s2=1)
     mc_sample = n_mcsamples + 10000
     result = _met_dis_lksd(P, Q, data_source, n, r, k, mc_sample=mc_sample)
     return result
@@ -387,7 +388,7 @@ def met_dis_imqbowlksd_moremc(P, Q, data_source, n, r):
 # Define our custom Job, which inherits from base class IndependentJob
 class Ex6Job(IndependentJob):
    
-    def __init__(self, aggregator, P, Q, data_source, prob_label, rep, met_func, n):
+    def __init__(self, aggregator, prob_label, rep, met_func, n):
         walltime = 60*59*24 
         #walltime = 60*59
         memory = 52472#int(n*1e-2) + 50
@@ -395,9 +396,9 @@ class Ex6Job(IndependentJob):
         IndependentJob.__init__(self, aggregator, walltime=walltime,
                                 memory=memory)
         # P, P are lkgof.model.LatentVariableModel
-        self.P = P
-        self.Q = Q
-        self.data_source = data_source
+        # self.P = P
+        # self.Q = Q
+        # self.data_source = data_source
         self.prob_label = prob_label
         self.rep = rep
         self.met_func = met_func
@@ -407,9 +408,9 @@ class Ex6Job(IndependentJob):
     # of JobResult base class
     def compute(self):
 
-        P = self.P
-        Q = self.Q
-        data_source = self.data_source 
+        # P = self.P
+        # Q = self.Q
+        # data_source = self.data_source 
         r = self.rep
         n = self.n
         met_func = self.met_func
@@ -418,8 +419,7 @@ class Ex6Job(IndependentJob):
         logger.info("computing. %s. prob=%s, r=%d,\
                 n=%d"%(met_func.__name__, prob_label, r, n))
         with util.ContextTimer() as t:
-            job_result = met_func(P, Q, data_source, n, r)
-
+            job_result = met_func(P, Q, ds, n, r)
             # create ScalarResult instance
             result = SingleResult(job_result)
             # submit the result to my own aggregator
@@ -468,14 +468,14 @@ method_funcs = [
     # met_dis_nbowmmd,
     # met_dis_gbowmmd,
     met_dis_imqbowmmd,
-    met_dis_imqbowmmd_moremc,
-    met_dis_imqbowmmd_cheap,
+    # met_dis_imqbowmmd_moremc,
+    # met_dis_imqbowmmd_cheap,
     # met_dis_hksd,
     # met_dis_hlksd,
     # met_dis_bowlksd,
     # met_dis_gbowlksd,
     met_dis_imqbowlksd,
-    met_dis_imqbowlksd_moremc,
+    #  met_dis_imqbowlksd_moremc,
    ]
 
 
@@ -515,20 +515,29 @@ def make_lda_prob(problem, pname, qname, rname, seed=149):
     betap = lda.get_topics()
     vocab_size = betap.shape[1]
     n_values = vocab_size*np.ones(n_words, dtype=np.int64)
-    alphap = lda.alpha
+    alphap = np.load('{}.alpha.npy'.format(modelp_path))
+    print(alphap)
     modelp = model.LDAEmBayes(alpha=alphap, beta=betap,
                               n_values=n_values)
     
     modelq_filename= 'LDA_{}'.format(qname)
     modelq_path = os.path.join(modeldir, problem, modelq_filename)
     lda = LdaModel.load(datapath(modelq_path))
+    alphaq = np.load('{}.alpha.npy'.format(modelq_path))
     betaq = lda.get_topics()
-    assert vocab_size == betaq.shape[1]
-    alphaq = lda.alpha
     modelq = model.LDAEmBayes(alpha=alphaq, beta=betaq,
                               n_values=n_values)
+    print(betaq.shape, betaq.min())
     return modelp, modelq, datar
 
+# P, Q, ds = make_lda_prob(problem='stat.ME_math.PR_stat.TH',
+#                          pname='math.PR', qname='stat.ME', rname='stat.TH')
+# ns = [100, 200, 300]
+ns = [100, 200, 300, 400, 500]
+# P, Q, ds = make_lda_prob(problem='hep-ph_quant-ph_mixture',
+#         pname='hep-ph_quant-ph_0.6', qname='hep-ph_quant-ph_0.7', rname='hep-ph')
+P, Q, ds = make_lda_prob(problem='cs.LG_stat.ME_stat.TH',
+        pname='cs.LG', qname='stat.ME', rname='stat.TH')
 
 def get_ns_pqrsource(prob_label):
     """
@@ -542,19 +551,39 @@ def get_ns_pqrsource(prob_label):
     """
     prob2tuples = {
         # A case where H0 (P is better) is true.
-           'arxiv_AP_ME_TH':
-            ([100, 200, 300, ], ) + make_lda_prob(problem='stat.AP_stat.ME_stat.TH', 
-                                                pname='stat.AP',
-                                                qname='stat.ME', rname='stat.TH'),
+            # 'arxiv_AP_ME_TH':
+            # ([100, 200, 300, ], ) + make_lda_prob(problem='stat.AP_stat.ME_stat.TH', 
+            #                                     pname='stat.AP',
+            #                                     qname='stat.ME', rname='stat.TH'),
             'arxiv_csLG_ME_TH':
-            ([100, 200, 300,], ) + make_lda_prob(problem='cs.LG_stat.ME_stat.TH', 
+            ([100, 200, 300, 400, 500], ) + make_lda_prob(problem='cs.LG_stat.ME_stat.TH', 
                                                 pname='cs.LG',
                                                 qname='stat.ME', rname='stat.TH'),
-            'arxiv_mathPR_statME_statTH':
-            ([100, 200, 300,], ) + make_lda_prob(problem='stat.ME_math.PR_stat.TH', 
-                                                pname='math.PR',
-                                                qname='stat.ME', rname='stat.TH'),
-     
+            # 'arxiv_csLG_ML_TH':
+            # ([100, 200, 300,], ) + make_lda_prob(problem='cs.LG_stat.ML_stat.TH', 
+            #                                     pname='cs.LG',
+            #                                     qname='stat.ML', rname='stat.TH'),
+            # 'arxiv_mathPR_statME_statTH':
+            # ([100, 200, 300, 400, 500], ) + make_lda_prob(problem='stat.ME_math.PR_stat.TH', 
+            #                                     pname='math.PR',
+            #                                     qname='stat.ME', rname='stat.TH'),
+            # 'arxiv_astro-ph.GA_astro-ph.SR_P06_Q07_Rastro-ph.SR':
+            # ([100, 200, 300,], ) + make_lda_prob(problem='astro-ph.GA_astro-ph.SR_mixture',
+            #                                     pname='astro-ph.SR_astro-ph.GA_0.6',
+            #                                     qname='astro-ph.SR_astro-ph.GA_0.7', rname='astro-ph.SR'),
+            # 'arxiv_hep-th_quant-ph_P06_Q07_Rquant-ph':
+            # ([100, 200, 300,], ) + make_lda_prob(problem='hep-th_quant-ph_mixture',
+            #                                     pname='quant-ph_hep-th_0.6',
+            #                                     qname='quant-ph_hep-th_0.7', rname='quant-ph'),
+            # 'arxiv_hep-ph_quant-ph_P06_Q07_Rhep-ph':
+            # ([100, 200, 300,], ) + make_lda_prob(problem='hep-ph_quant-ph_mixture',
+            #                                     pname='hep-ph_quant-ph_0.6',
+            #                                     qname='hep-ph_quant-ph_0.7', rname='hep-ph'),
+            # 'arxiv_cond-mat.mtrl-sci_cond-mat.mes-hall':
+            # ([100, 200, 300,], ) + make_lda_prob(problem='cond-mat.mtrl-sci_cond-mat.mes-hall_mixture',
+            #                                     pname='cond-mat.mtrl-sci_cond-mat.mes-hall_0.5',
+            #                                     qname='cond-mat.mtrl-sci_cond-mat.mes-hall_0.7', rname='cond-mat.mtrl-sci'),
+
             }  # end of prob2tuples
     if prob_label not in prob2tuples:
         raise ValueError('Unknown problem label. Need to be one of %s'%str(list(prob2tuples.keys()) ))
@@ -606,7 +635,7 @@ def run_problem(prob_label):
                     aggregators[r, ni, mi] = sra
                 else:
                     # result not exists or rerun
-                    job = Ex6Job(SingleResultAggregator(), P, Q, ds, prob_label,
+                    job = Ex6Job(SingleResultAggregator(), prob_label,
                             r, f, n)
 
                     agg = engine.submit_job(job)
@@ -638,8 +667,8 @@ def run_problem(prob_label):
 
     # save results 
     results = {'job_results': job_results, 
-            'P': P, 'Q': Q,
-            'data_source': ds, 
+            # 'P': P, 'Q': Q,
+            # 'data_source': ds, 
             'alpha': alpha, 'repeats': reps, 'ns': ns,
             'method_funcs': method_funcs, 'prob_label': prob_label,
             }

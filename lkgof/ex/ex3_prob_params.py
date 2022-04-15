@@ -174,41 +174,6 @@ def met_imqmmd_med(P, Q, data_source, r):
     return scmmd_result
 
 
-def met_glksd_med(P, Q, data_source, r):
-    """
-    LKSD model comparison test
-        * One Gaussian kernel for the two statistics.
-        * Use jackknife variance estimator
-    """
-    # sample some data 
-    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
-    medz = util.meddistance(kernel_data.data(), subsample=1000)
-    k = kernel.KGauss(sigma2=medz**2)
-
-    ldcksd_result =  _met_lksd(P, Q, data_source, sample_size, r, k=k, )
-    return ldcksd_result
-    
-
-def met_imqlksd_med(P, Q, data_source, r):
-    """
-    KSD-based model comparison test
-        * One Median-scaled IMQ kernel for the two statistics.
-        * Use jackknife variance estimator
-    """
-
-    # sample some data 
-    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
-    X = kernel_data.data()
-    d = X.shape[1]
-    medX = util.meddistance(X)
-    k = kernel.KPIMQ(medX**2 * np.eye(d))
-
-
-
-    ldcksd_result = _met_lksd(P, Q, data_source, sample_size, r, k=k,)
-    return ldcksd_result
-
-
 def _met_lksd(P, Q, data_source, n, r, k,
               varest=util.second_order_ustat_variance_jackknife):
     """
@@ -235,6 +200,65 @@ def _met_lksd(P, Q, data_source, n, r, k,
             }
 
 
+def met_glksd_med(P, Q, data_source, r):
+    """
+    LKSD model comparison test
+        * One Gaussian kernel for the two statistics.
+        * Use jackknife variance estimator
+    """
+    # sample some data 
+    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
+    medz = util.meddistance(kernel_data.data(), subsample=1000)
+    k = kernel.KGauss(sigma2=medz**2)
+
+    ldcksd_result =  _met_lksd(P, Q, data_source, sample_size, r, k=k, )
+    return ldcksd_result
+ 
+
+def met_imqlksd_med(P, Q, data_source, r, 
+                    varest=util.second_order_ustat_variance_jackknife,
+):
+    """
+    KSD-based model comparison test
+        * One Median-scaled IMQ kernel for the two statistics.
+        * Use jackknife variance estimator
+    """
+
+    # sample some data 
+    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
+    X = kernel_data.data()
+    d = X.shape[1]
+    medX = util.meddistance(X)
+    k = kernel.KPIMQ(medX**2 * np.eye(d))
+
+    ldcksd_result = _met_lksd(P, Q, data_source, sample_size, r, k=k, varest=varest)
+    return ldcksd_result
+
+
+def met_imqlksd_med_ustatvar(P, Q, data_source, r):
+    """
+    KSD-based model comparison test
+        * One Median-scaled IMQ kernel for the two statistics.
+        * Use U-stat variance estimator
+    """
+
+    # sample some data 
+    varest = util.second_order_ustat_variance_ustat
+    return met_imqlksd_med(P, Q, data_source, r, varest=varest)
+
+
+def met_imqlksd_med_vstatvar(P, Q, data_source, r):
+    """
+    KSD-based model comparison test
+        * One Median-scaled IMQ kernel for the two statistics.
+        * Use V-stat variance estimator
+    """
+
+    # sample some data 
+    varest = util.second_order_ustat_variance_vstat
+    return met_imqlksd_med(P, Q, data_source, r, varest=varest)
+
+
 def met_imqlksd_cov(P, Q, data_source, r):
     """
     KSD-based model comparison test
@@ -253,20 +277,45 @@ def met_imqlksd_cov(P, Q, data_source, r):
 
     return ldcksd_result
 
+def met_dis_imqbowmmd(P, Q, data_source, r):
+    """
+    Bounliphone et al., 2016's MMD-based 3-sample test.
+    * IMQ BoW kernel for discrete observations.
+    * Use full sample for testing (no holding out for optimization)
+    """
+    if not np.all(P.n_values == Q.n_values):
+        raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
+    n_values = P.n_values
+    d = P.dim
+    k = kernel.KIMQBoW(n_values, d, s2=1)
+    result = _met_mmd(P, Q, data_source, sample_size, r, k)
+    return result
 
-def met_dis_gbowlksd(P, Q, data_source, r):
-    met_func = ex2.met_dis_gbowlksd
-    return met_func(P, Q, data_source, sample_size, r)
+
+def met_dis_imqbowlksd(P, Q, data_source, r, 
+                       varest=util.second_order_ustat_variance_jackknife):
+    """
+    Latent KSD-based model comparison test (relative test).
+        * IMQ BoW kernel for discrete observations.
+        * Use jackknife variance estimator
+    """
+    if not np.all(P.n_values == Q.n_values):
+        raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
+    n_values = P.n_values
+    d = P.dim
+
+    k = kernel.KIMQBoW(n_values, d, s2=1)
+    result = _met_lksd(P, Q, data_source, sample_size, r, k, varest=varest)
+    return result
+
+def met_dis_imqbowlksd_ustatvar(P, Q, data_source, r):
+    varest = util.second_order_ustat_variance_ustat
+    return met_imqlksd_med(P, Q, data_source, r, varest=varest)
 
 
-def met_dis_gbowlksd_vstat(P, Q, data_source, r):
-    met_func = ex2.met_dis_gbowlksd_vstat
-    return met_func(P, Q, data_source, sample_size, r)
-
-
-def met_dis_gbowlksd_jackknife(P, Q, data_source, r):
-    met_func = ex2.met_dis_gbowlksd_jackknife
-    return met_func(P, Q, data_source, sample_size, r)
+def met_dis_imqbowlksd_vstatvar(P, Q, data_source, r):
+    varest = util.second_order_ustat_variance_vstat
+    return met_imqlksd_med(P, Q, data_source, r, varest=varest)
 
 
 # Define our custom Job, which inherits from base class IndependentJob
@@ -318,8 +367,8 @@ class Ex3Job(IndependentJob):
             prob_label, r, param, t.secs))
 
         # save result
-        fname = '%s-%s-param%g_np%d_n%d_r%d_a%.3f.p' \
-                %(prob_label, func_name, param, problem, sample_size, r, alpha)
+        fname = '%s-%s-param%g_np%d_n%d_mc%d_r%d_a%.3f.p' \
+                %(prob_label, func_name, param, problem, sample_size, n_mcsamples, r, alpha)
         glo.ex_save_result(ex, job_result, prob_label, fname)
 
 # This import is needed so that pickle knows about the class Ex3Job.
@@ -333,9 +382,12 @@ from lkgof.ex.ex3_prob_params import met_imqmmd_cov
 from lkgof.ex.ex3_prob_params import met_glksd_med
 from lkgof.ex.ex3_prob_params import met_imqlksd_cov
 from lkgof.ex.ex3_prob_params import met_imqlksd_med
-from lkgof.ex.ex3_prob_params import met_dis_gbowlksd
-from lkgof.ex.ex3_prob_params import met_dis_gbowlksd_vstat
-from lkgof.ex.ex3_prob_params import met_dis_gbowlksd_jackknife
+from lkgof.ex.ex3_prob_params import met_imqlksd_med_ustatvar
+from lkgof.ex.ex3_prob_params import met_imqlksd_med_vstatvar
+from lkgof.ex.ex3_prob_params import met_dis_imqbowlksd
+from lkgof.ex.ex3_prob_params import met_dis_imqbowlksd_ustatvar
+from lkgof.ex.ex3_prob_params import met_dis_imqbowlksd_vstatvar
+from lkgof.ex.ex3_prob_params import met_dis_imqbowmmd
 
 #--- experimental setting -----
 ex = 3
@@ -344,14 +396,13 @@ ex = 3
 alpha = 0.05
 
 # repetitions for each sample size 
-reps = 100
+reps = 300
 
 # sample size 
-sample_size = 100
+sample_size = 300
 
 # num of problems
-num_problems = 50
-
+num_problems = 1
 
 # kernel data size
 kernel_datasize = 500
@@ -360,20 +411,26 @@ kernel_datasize = 500
 burnin_sizes = {
     model.DPMIsoGaussBase: 1000,
     model.PPCA: 200,
-    model.LDAEmBayes: 5000,
+    model.LDAEmBayes: 4000,
 }
 
 # Markov chain sample size 
-n_mcsamples = 500
+n_mcsamples = 10000
 
 # tests to try
 method_funcs = [ 
     # met_gmmd_med,
     # met_gksd_med,
-    met_imqlksd_med,
-    met_imqmmd_med,
-    #met_imqmmd_cov,
-    #met_imqlksd_cov,
+    # met_imqlksd_med,
+    # met_imqlksd_med_ustatvar,
+    # met_imqlksd_med_vstatvar,
+    # met_imqmmd_med,
+    # met_imqmmd_cov,
+    # met_imqlksd_cov,
+    met_dis_imqbowmmd,
+    met_dis_imqbowlksd,
+    # met_dis_imqbowlksd_ustatvar,
+    # met_dis_imqbowlksd_vstatvar,
    ]
 
 # If is_rerun==False, do not rerun the experiment if a result file for the current
@@ -383,6 +440,7 @@ is_rerun = False
 
 
 from lkgof.ex.ex2_vary_n_disc import make_lda_prob
+from lkgof.ex.ex2_vary_n_disc import make_lda_mix_prob
 from lkgof.ex.ex1_vary_n import make_ppca_prob
 
 
@@ -433,7 +491,7 @@ def get_params_pqrsource(prob_label):
         return [ptbq + 0.1 * j 
                   for j in (list(range(-5, 0)) + list(range(1, 5+1)))]
                   # for j in range(-5, 5+1)]
-    ppca_ps = [10**(-i) for i in range(9, 0, -1)]
+    ppca_ps = [10**(-i) for i in range(9, 1, -1)]
     lda_ps = [10**(-i) for i in range(10, 0, -2)]
     # isogdpm_ps = [2, 2.25, 2.5, 2.75, 3.25, 3.5, 3.75, 4.0,]
 
@@ -462,23 +520,65 @@ def get_params_pqrsource(prob_label):
                  for ptbq in ppca_ps]
                 for i in range(num_problems)
             ],
-        'ppca_ws_dx50_h0_p0':
-            [
-                [(ptbq,)+ make_ppca_prob(dx=50, dz=10, var=1.,ptbp=0., ptbq=ptbq, seed=13+i)
-                 for ptbq in ppca_ps]
-                for i in range(num_problems)
-            ],
         'ppca_ws_dx50_h0_p1':
             [
                 [(ptbq,)+ make_ppca_prob(dx=50, dz=10, var=1.,ptbp=1., ptbq=1.+ptbq, seed=13+i)
                  for ptbq in ppca_ps]
                 for i in range(num_problems)
             ],
-        'lda_as_dx50_h0_p1':
+        'ppca_ws_dx100_h0_p1':
             [
-                [(ptbq,)+ make_lda_prob(n_words=100, n_topics=3, vocab_size=50, ptb_p=1.,
-                                        ptb_q=1.+ptbq, seed=13+i)
+                [(ptbq,)+ make_ppca_prob(dx=100, dz=10, var=1.,ptbp=1., ptbq=1.+ptbq, seed=13+i)
+                 for ptbq in ppca_ps]
+                for i in range(num_problems)
+            ],
+        'lda_as_dx50_h0_p05':
+            [
+                [(ptbq,)+ make_lda_prob(n_words=50, n_topics=3, vocab_size=100, ptb_p=0.5,
+                                        ptb_q=0.5+ptbq, seed=13+i, temp=1.)
                  for ptbq in lda_ps]
+                for i in range(num_problems)
+            ],
+        'lda_mix_dx50_h1_q1e-2temp1alpha1e-2':
+            [
+                [(ptbp,)+ make_lda_mix_prob(n_words=50, n_topics=3, vocab_size=10000, ptb_p=1e-2+ptbp,
+                                            ptb_q=1e-2, seed=149+i, temp=1., alpha=1e-2)
+                 for ptbp in [0.05 * j for j in range(1, 11)]]
+                for i in range(num_problems)
+            ],
+         'lda_mix_dx50_h1_q1e-2temp1alpha1e-1':
+            [
+                [(ptbp,)+ make_lda_mix_prob(n_words=50, n_topics=3, vocab_size=10000, ptb_p=1e-2+ptbp,
+                                            ptb_q=1e-2, seed=149+i, temp=1., alpha=1e-1)
+                 for ptbp in [0.05 * j for j in range(1, 11)]]
+                for i in range(num_problems)
+            ],
+         'lda_mix_dx50_h1_q1e-2temp1alpha1':
+            [
+                [(ptbp,)+ make_lda_mix_prob(n_words=50, n_topics=3, vocab_size=10000, ptb_p=1e-2+ptbp,
+                                            ptb_q=1e-2, seed=149+i, temp=1., alpha=1)
+                 for ptbp in [0.05 * j for j in range(1, 11)]]
+                for i in range(num_problems)
+            ],
+        'lda_mix_dx50_h1_q1e-2temp1e-1alpha1e-2':
+            [
+                [(ptbp,)+ make_lda_mix_prob(n_words=50, n_topics=3, vocab_size=10000, ptb_p=1e-2+ptbp,
+                                            ptb_q=1e-2, seed=149+i, alpha=1e-2, temp=1e-1)
+                 for ptbp in [0.05 * j for j in range(1, 11)]]
+                for i in range(num_problems)
+            ],
+        'lda_mix_dx50_h1_q1e-2temp1e-1alpha1e-1':
+            [
+                [(ptbp,)+ make_lda_mix_prob(n_words=50, n_topics=3, vocab_size=10000, ptb_p=1e-2+ptbp,
+                                            ptb_q=1e-2, seed=149+i, alpha=0.1, temp=1e-1)
+                 for ptbp in [0.05 * j for j in range(1, 11)]]
+                for i in range(num_problems)
+            ],
+        'lda_mix_dx50_h1_q1e-2temp1e-1alpha1':
+            [
+                [(ptbp,)+ make_lda_mix_prob(n_words=50, n_topics=3, vocab_size=10000, ptb_p=1e-2+ptbp,
+                                            ptb_q=1e-2, seed=13+i, alpha=1., temp=1e-1)
+                 for ptbp in [0.05 * j for j in range(1, 11)]]
                 for i in range(num_problems)
             ],
 
@@ -531,8 +631,8 @@ def run_problem(prob_label):
                 for mi, f in enumerate(method_funcs):
                     # name used to save the result
                     func_name = f.__name__
-                    fname = '%s-%s-param%g_np%d_n%d_r%d_a%.3f.p' \
-                        %(prob_label, func_name, param, pri, sample_size, r, alpha)
+                    fname = '%s-%s-param%g_np%d_n%d_mc%d_r%d_a%.3f.p' \
+                        %(prob_label, func_name, param, pri, sample_size, n_mcsamples, r, alpha)
                     if not is_rerun and glo.ex_file_exists(ex, prob_label, fname):
                         logger.info('%s exists. Load and return.'%fname)
                         job_result = glo.ex_load_result(ex, prob_label, fname)
@@ -585,8 +685,9 @@ def run_problem(prob_label):
     # class name 
     # fname = 'ex%d-%s-me%d_rs%g_pmi%g_pma%d_n%d_a%.3f.p' \
         # %(ex, prob_label, n_methods, reps, min(params), max(params), sample_size, alpha,)
-    fname = 'ex%d-%s-me%d_rs%g_np%d_pmi%g_pma%d_n%d_a%.3f.p' \
-        %(ex, prob_label, n_methods, reps, num_problems, min(params), max(params), sample_size, alpha,)
+    fname = 'ex%d-%s-me%d_rs%g_np%d_pmi%g_pma%d_n%d_mc%d_a%.3f.p' \
+        %(ex, prob_label, n_methods, reps, num_problems, 
+          min(params), max(params), sample_size, n_mcsamples, alpha,)
 
     glo.ex_save_result(ex, results, fname)
     logger.info('Saved aggregated results to %s'%fname)

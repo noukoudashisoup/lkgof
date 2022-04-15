@@ -1,4 +1,4 @@
-"""Simulation to get the test power vs increasing sample size"""
+"""Simulation to get the test power vs kernel parameter"""
 
 __author__ = 'noukoudashisoup'
 
@@ -351,14 +351,14 @@ n_mcsamples = 500
 
 # tests to try
 method_funcs = [ 
-    met_imqmmd,
+    # met_imqmmd,
     # met_gmmd,
-    met_imqlksd,
+    # met_imqlksd,
     # met_glksd,
-    # met_imqbowmmd,
-    # met_gbowmmd,
-    # met_dis_imqbowlksd,
-    # met_dis_gbowlksd,
+    met_imqbowmmd,
+    met_gbowmmd,
+    met_dis_imqbowlksd,
+    met_dis_gbowlksd,
    ]
 
 # If is_rerun==False, do not rerun the experiment if a result file for the current
@@ -383,32 +383,23 @@ def get_ns_params__pqrsource(prob_label):
     prob2tuples = { 
         'ppca_h0_dx100_dz10':
             # list of sample sizes
-            ([100, 200, 300], ) + (ppca_bandwidths,) + make_ppca_prob(dx=100, dz=10, ptbp=1., ptbq=1+1e-5),
+            ([100,], ) + (ppca_bandwidths,) + make_ppca_prob(dx=100, dz=10, ptbp=1., ptbq=1+1e-5),
         'ppca_h1_dx100_dz10_p2_q1':
             # list of sample sizes
-            ([100, 200, 300], ) + (ppca_bandwidths,) + make_ppca_prob(dx=100, dz=10, ptbp=2., ptbq=1.),
-        'ppca_h1_dx100_dz10_p2_q1':
-            # list of sample sizes
-            ([100, 200, 300], ) + (ppca_bandwidths,) + make_ppca_prob(dx=100, dz=10, ptbp=2., ptbq=1.),
+            # ([100, 200, 300], ) + (ppca_bandwidths,) + make_ppca_prob(dx=100, dz=10, ptbp=2., ptbq=1.),
+            ([100], ) + (ppca_bandwidths,) + make_ppca_prob(dx=100, dz=10, ptbp=2., ptbq=1.),
         'lda_h1_dx50_v1000_t3_p1q05temp1':
             ([100, 200, 300, ], ) + (lda__bandwidths,) +  make_lda_prob(n_words=50, n_topics=3,
                                                 vocab_size=1000,
                                                 ptb_p=1., ptb_q=0.5, temp=1.),
         'lda_h1_dx50_v10000_t3_p1q05temp1':
-            ([100, 200, 300, ], ) + (lda__bandwidths,) +  make_lda_prob(n_words=50, n_topics=3,
+            ([100, ], ) + (lda__bandwidths,) +  make_lda_prob(n_words=50, n_topics=3,
                                                 vocab_size=10000,
                                                 ptb_p=1., ptb_q=0.5, temp=1.),
         'lda_h1_dx50_v10000_t3_p1q05temp1e-1':
-            ([100, 200, 300, ], ) + (lda__bandwidths,) +  make_lda_prob(n_words=50, n_topics=3,
+            ([100, ], ) + (lda__bandwidths,) +  make_lda_prob(n_words=50, n_topics=3,
                                                 vocab_size=10000,
                                                 ptb_p=1., ptb_q=0.5, temp=1e-1),
-        'isogdpm_h1_dx10_tr5_p12e-1_q1':
-            # list of sample sizes
-            ([100, 200, 300], ) + (isogdpm__bandwidths,)+make_dpm_isogauss_prob(tr_size=5, dx=10, ptbp=1.2, ptbq=1.),
-        'isogdpm_h1_dx10_tr5_p9e-1_q1':
-            # list of sample sizes
-            ([100, 200, 300], ) + (isogdpm__bandwidths,)+make_dpm_isogauss_prob(tr_size=5, dx=10, ptbp=0.9, ptbq=1.),
-
     }  # end of prob2tuples
     if prob_label not in prob2tuples:
         raise ValueError('Unknown problem label. Need to be one of %s'%str(list(prob2tuples.keys()) ))

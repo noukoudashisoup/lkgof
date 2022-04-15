@@ -301,7 +301,9 @@ def met_glksd_med(P, Q, data_source, n, r):
     return ldcksd_result
     
 
-def met_imqlksd_med(P, Q, data_source, n, r):
+def met_imqlksd_med(P, Q, data_source, n, r, 
+                    varest=util.second_order_ustat_variance_jackknife,
+):
     """
     KSD-based model comparison test
         * One Median-scaled IMQ kernel for the two statistics.
@@ -315,10 +317,32 @@ def met_imqlksd_med(P, Q, data_source, n, r):
     medX = util.meddistance(X)
     k = kernel.KPIMQ(medX**2 * np.eye(d))
 
-
-
-    ldcksd_result = _met_lksd(P, Q, data_source, n, r, k=k,)
+    ldcksd_result = _met_lksd(P, Q, data_source, n, r, k=k, varest=varest)
     return ldcksd_result
+
+
+def met_imqlksd_med_ustatvar(P, Q, data_source, n, r, 
+                    varest=util.second_order_ustat_variance_ustat,
+):
+    """
+    KSD-based model comparison test
+        * One Median-scaled IMQ kernel for the two statistics.
+        * Use U-stat variance estimator
+    """
+    varest = util.second_order_ustat_variance_ustat
+    return met_imqlksd_med(P, Q, data_source, n, r, varest=varest)
+
+
+def met_imqlksd_med_vstatvar(P, Q, data_source, n, r, 
+                    varest=util.second_order_ustat_variance_ustat,
+):
+    """
+    KSD-based model comparison test
+        * One Median-scaled IMQ kernel for the two statistics.
+        * Use V-stat variance estimator
+    """
+    varest = util.second_order_ustat_variance_vstat
+    return met_imqlksd_med(P, Q, data_source, n, r, varest=varest)
 
 
 def met_imqlksd_cov(P, Q, data_source, n, r):
@@ -405,6 +429,8 @@ from lkgof.ex.ex1_vary_n import met_imqksd_cov
 from lkgof.ex.ex1_vary_n import met_glksd_med
 from lkgof.ex.ex1_vary_n import met_imqlksd_med
 from lkgof.ex.ex1_vary_n import met_imqlksd_cov
+from lkgof.ex.ex1_vary_n import met_imqlksd_med_ustatvar
+from lkgof.ex.ex1_vary_n import met_imqlksd_med_vstatvar
 
 #--- experimental setting -----
 ex = 1
@@ -430,12 +456,14 @@ n_mcsamples = 500
 # tests to try
 method_funcs = [ 
     met_gmmd_med,
-    # met_gksd_med,
-    # met_glksd_med,
+    met_gksd_med,
+    met_glksd_med,
     # met_imqmmd_med,
     # met_imqksd_med,
     # met_imqlksd_med,
-    # met_imqmmd_cov,
+    # met_imqlksd_med_ustatvar,
+    # met_imqlksd_med_vstatvar,
+    #met_imqmmd_cov,
     # met_imqksd_cov,
     # met_imqlksd_cov,
    ]
@@ -531,36 +559,24 @@ def get_ns_pqrsource(prob_label):
         'ppca_h1_dx10_dz5':
             # list of sample sizes
             ([100, 200, 300, 400, 500], ) + make_ppca_prob(dx=10, dz=5, ptbp=2., ptbq=1.,),
-        'ppca_h0_dx30_dz10':
-            # list of sample sizes
-            ([100, 200, 300], ) + make_ppca_prob(dx=30, dz=10, ptbp=1., ptbq=2.),
-        'ppca_h1_dx30_dz10':
-            # list of sample sizes
-            ([100, 200, 300], ) + make_ppca_prob(dx=30, dz=10, ptbp=1.1),
         'ppca_h0_dx50_dz10':
             # list of sample sizes
             ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=50, dz=10, ptbp=1., ptbq=2.),
         'ppca_h0_dx50_dz10_p0_q1':
             # list of sample sizes
             ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=50, dz=10, ptbp=0., ptbq=1.),
-        'ppca_h0_dx50_dz10_p0_q1e-2':
-            # list of sample sizes
-            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=50, dz=10, ptbp=0., ptbq=0.01),
-        'ppca_h0_dx50_dz10_p0_q1e-4':
-            # list of sample sizes
-            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=50, dz=10, ptbp=0., ptbq=1e-4),
         'ppca_h0_dx50_dz10_p1_q1':
             # list of sample sizes
-            ([i*100 for i in range(1, 4+1)], ) + make_ppca_prob(dx=50, dz=10, ptbp=1., ptbq=1.),
+            ([i*100 for i in range(1, 3+1)], ) + make_ppca_prob(dx=50, dz=10, ptbp=1., ptbq=1.),
+        'ppca_h0_dx100_dz10_p1_q1':
+            # list of sample sizes
+            ([i*100 for i in range(1, 3+1)], ) + make_ppca_prob(dx=100, dz=10, ptbp=1., ptbq=1.),
         'ppca_h0_dx50_dz10_p1_q1+1e-4':
             # list of sample sizes
             ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=50, dz=10, ptbp=1., ptbq=1.+1e-4),
         'ppca_h0_dx50_dz10_p1_q1+1e-10':
             # list of sample sizes
             ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=50, dz=10, ptbp=1., ptbq=1.+1e-10),
-        'ppca_h1_dx100_dz10':
-            # list of sample sizes
-            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=100, dz=10, ptbp=2.),
         'ppca_h1_dx100_dz10':
             # list of sample sizes
             ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=100, dz=10, ptbp=2.),
@@ -605,12 +621,12 @@ def run_problem(prob_label):
         foldername=foldername, job_name_base="e%d_"%ex, parameter_prefix="")
 
     # Use the following line if Slurm queue is not used.
-    engine = SerialComputationEngine()
-    # partitions = expr_configs['slurm_partitions']
-    # if partitions is None:
-    #     engine = SlurmComputationEngine(batch_parameters)
-    # else:
-    #     engine = SlurmComputationEngine(batch_parameters, partition=partitions)
+    # engine = SerialComputationEngine()
+    partitions = expr_configs['slurm_partitions']
+    if partitions is None:
+        engine = SlurmComputationEngine(batch_parameters)
+    else:
+        engine = SlurmComputationEngine(batch_parameters, partition=partitions)
     n_methods = len(method_funcs)
 
     # problem setting

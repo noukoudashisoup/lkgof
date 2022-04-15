@@ -185,7 +185,7 @@ def met_dis_gbowmmd(P, Q, data_source, n, r):
         raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
     n_values = P.n_values
     d = P.dim
-    k = kernel.KGaussBoW(n_values, d, s2=d**2)
+    k = kernel.KGaussBoW(n_values, d, s2=1)
     result = _met_dis_mmd(P, Q, data_source, n, r, k)
     return result
 
@@ -200,7 +200,7 @@ def met_dis_imqbowmmd(P, Q, data_source, n, r):
         raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
     n_values = P.n_values
     d = P.dim
-    k = kernel.KIMQBoW(n_values, d, s2=d**2)
+    k = kernel.KIMQBoW(n_values, d, s2=1)
     result = _met_dis_mmd(P, Q, data_source, n, r, k)
     return result
 
@@ -263,27 +263,12 @@ def _met_dis_lksd(P, Q, data_source, n, r, k, mc_sample=500,
             'test_result': ldcksd_result, 'time_secs': t.secs,
             }
 
-
-def met_dis_hlksd(P, Q, data_source, n, r):
-    """
-    Latent KSD-based model comparison test (relative test). 
-        * Exponentiated Hamming distance kernel for discrete observations.
-    """
-    if not np.all(P.n_values == Q.n_values):
-        raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
-    n_values = P.n_values
-    d = P.dim
-
-    k = kernel.KHamming(n_values, d)
-    result = _met_dis_lksd(P, Q, data_source, n, r, k)
-    return result
-
-
+    
 def met_dis_bowlksd(P, Q, data_source, n, r):
     """
     Latent KSD-based model comparison test (relative test). 
         * Exponentiated Vanilla BoW kernel for discrete observations.
-        * Use U-statistic variance estimator
+        * Use jackknife variance estimator
     """
 
 
@@ -301,7 +286,7 @@ def met_dis_nbowlksd(P, Q, data_source, n, r):
     """
     Latent KSD-based model comparison test (relative test). 
         * Exponentiated Normalized BoW kernel for discrete observations.
-        * Use U-statistic variance estimator
+        * Use jackknife variance estimator
     """
     if not np.all(P.n_values == Q.n_values):
         raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
@@ -317,32 +302,70 @@ def met_dis_gbowlksd(P, Q, data_source, n, r):
     """
     Latent KSD-based model comparison test (relative test).
         * Exponentiated Gaussian BoW kernel for discrete observations.
-        * Use U-statistic variance estimator
+        * Use jackknife variance estimator
     """
     if not np.all(P.n_values == Q.n_values):
         raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
     n_values = P.n_values
     d = P.dim
 
-    k = kernel.KGaussBoW(n_values, d, s2=d**2)
+    k = kernel.KGaussBoW(n_values, d, s2=1)
     result = _met_dis_lksd(P, Q, data_source, n, r, k, )
     return result
 
 
-def met_dis_imqbowlksd(P, Q, data_source, n, r):
+def met_dis_ebowlksd(P, Q, data_source, n, r):
+    """
+    Latent KSD-based model comparison test (relative test).
+        * Exponentiated Exponentiated BoW kernel for discrete observations.
+        * Use jackknife variance estimator
+    """
+    if not np.all(P.n_values == Q.n_values):
+        raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
+    n_values = P.n_values
+    d = P.dim
+
+    k = kernel.KExpBoW(n_values, d, s2=1)
+    result = _met_dis_lksd(P, Q, data_source, n, r, k, )
+    return result
+
+
+def met_dis_imqbowlksd(P, Q, data_source, n, r, 
+                       varest=util.second_order_ustat_variance_jackknife,
+    ):
     """
     Latent KSD-based model comparison test (relative test).
         * IMQ BoW kernel for discrete observations.
-        * Use U-statistic variance estimator
+        * Use jackknife variance estimator
     """
     if not np.all(P.n_values == Q.n_values):
         raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
     n_values = P.n_values
     d = P.dim
 
-    k = kernel.KIMQBoW(n_values, d, s2=d**2)
-    result = _met_dis_lksd(P, Q, data_source, n, r, k, )
+    k = kernel.KIMQBoW(n_values, d, s2=1)
+    result = _met_dis_lksd(P, Q, data_source, n, r, k, varest=varest)
     return result
+
+
+def met_dis_imqbowlksd_ustatvar(P, Q, data_source, n, r):
+    """
+    Latent KSD-based model comparison test (relative test).
+        * IMQ BoW kernel for discrete observations.
+        * Use U-stat variance estimator
+    """
+    varest = util.second_order_ustat_variance_ustat
+    return met_dis_imqbowlksd(P, Q, data_source, n, r, varest=varest)
+
+
+def met_dis_imqbowlksd_vstatvar(P, Q, data_source, n, r):
+    """
+    Latent KSD-based model comparison test (relative test).
+        * IMQ BoW kernel for discrete observations.
+        * Use V-stat variance estimator
+    """
+    varest = util.second_order_ustat_variance_vstat
+    return met_dis_imqbowlksd(P, Q, data_source, n, r, varest=varest)
 
 
 # Define our custom Job, which inherits from base class IndependentJob
@@ -405,18 +428,20 @@ from lkgof.ex.ex2_vary_n_disc import met_dis_gbowmmd
 from lkgof.ex.ex2_vary_n_disc import met_dis_hmmd
 from lkgof.ex.ex2_vary_n_disc import met_dis_hksd
 from lkgof.ex.ex2_vary_n_disc import _met_dis_lksd
-from lkgof.ex.ex2_vary_n_disc import met_dis_hlksd
 from lkgof.ex.ex2_vary_n_disc import met_dis_bowlksd
 from lkgof.ex.ex2_vary_n_disc import met_dis_nbowlksd
 from lkgof.ex.ex2_vary_n_disc import met_dis_gbowlksd
+from lkgof.ex.ex2_vary_n_disc import met_dis_ebowlksd
 from lkgof.ex.ex2_vary_n_disc import met_dis_imqbowmmd
 from lkgof.ex.ex2_vary_n_disc import met_dis_imqbowlksd
+from lkgof.ex.ex2_vary_n_disc import met_dis_imqbowlksd_ustatvar
+from lkgof.ex.ex2_vary_n_disc import met_dis_imqbowlksd_vstatvar
 
 #--- experimental setting -----
 ex = 2 
 
 # significance level of the test
-alpha = 0.01
+alpha = 0.05
 
 # repetitions for each sample size 
 reps = 300
@@ -438,7 +463,10 @@ method_funcs = [
     # met_dis_hlksd,
     # met_dis_bowlksd,
     met_dis_gbowlksd,
+    met_dis_ebowlksd,
     met_dis_imqbowlksd,
+    # met_dis_imqbowlksd_ustatvar,
+    # met_dis_imqbowlksd_vstatvar
    ]
 
 # If is_rerun==False, do not rerun the experiment if a result file for the current
@@ -510,13 +538,6 @@ def make_lda_prob(n_words, n_topics, vocab_size,
     beta = np.empty([n_topics, vocab_size])
     with util.NumpySeedContext(seed):
         beta = stats.dirichlet(alpha=temp*np.ones(vocab_size)).rvs(size=n_topics)
-    with util.NumpySeedContext(seed+100):
-        beta_ptb = stats.dirichlet(alpha=0.1*np.ones(vocab_size)).rvs(size=1)
-    # with util.NumpySeedContext(seed):
-        # beta_ = stats.dirichlet(alpha=0.1*np.ones(vocab_size)).rvs(size=1)
-    # for k in range(n_topics):
-    #     # beta[k] = (2.**(-2))*beta[k] + (1-2.**(-2))*beta_ptb
-    #     beta[k] = (1-2.**(-2))*beta[k] + (2.**(-2))*beta_ptb
     alpha = 0.1*np.ones([n_topics])
     modelr = model.LDAEmBayes(alpha, beta, n_values)
     alpha_p = alpha.copy()
@@ -527,6 +548,43 @@ def make_lda_prob(n_words, n_topics, vocab_size,
     alpha_q += ptb_q
     modelp = model.LDAEmBayes(alpha_p, beta_p, n_values)
     modelq = model.LDAEmBayes(alpha_q, beta_q, n_values)
+    ds = modelr.get_datasource()
+    return modelp, modelq, ds
+
+
+def make_lda_mix_prob(n_words, n_topics, vocab_size,
+                      ptb_p, ptb_q, temp=1., alpha=0.01, seed=149):
+    """LDA problem. 
+    Perturbation applied to the topics.
+
+    Args:
+        n_words:
+            The number of words in a document. Input dimension.
+        n_topics:
+            The number of topics.
+        vocab_size:
+            Vocabulary size. The size of the lattice domain.
+        ptb_p:
+            pertubation parameter for model P
+        ptb_q:
+            perturbation parameter for model Q
+
+    Returns:
+        tuple: (model.LDAEmBayes, model.LDAEmBayes, data source for R)
+            tuple of (P, Q, R)
+    """
+
+    n_values = np.ones(n_words, dtype=np.int64) * vocab_size
+    with util.NumpySeedContext(seed):
+        beta = stats.dirichlet(alpha=temp*np.ones(vocab_size)).rvs(size=n_topics)
+    with util.NumpySeedContext(seed+100):
+        beta_ptb = stats.dirichlet(alpha=temp*np.ones(vocab_size)).rvs(size=n_topics)
+    modelr = model.LDAEmBayes(alpha*np.ones([n_topics]), beta, n_values)
+    beta_p = (1-ptb_p)*beta + ptb_p * beta_ptb
+    beta_q = (1-ptb_q)*beta + ptb_q * beta_ptb
+    modelp = model.LDAEmBayes(alpha*np.ones([n_topics]), beta_p, n_values)
+    modelq = model.LDAEmBayes(alpha*np.ones([n_topics]), beta_q, n_values)
+
     ds = modelr.get_datasource()
     return modelp, modelq, ds
 
@@ -543,70 +601,10 @@ def get_ns_pqrsource(prob_label):
     """
     prob2tuples = {
         # A case where H0 (P is better) is true.
-        'betabinom_h0_dx10_n5_p1p11q21':
-            # list of sample sizes
-            ([100, 200, 300], ) + make_betabinom_prob(dx=10, aptbp=2,
-                                                      bptbp=1, aptbq=1., bptbq=1.,),
-        'betabinom_h1_dx10_n5_p1p21q11':
-            # list of sample sizes
-            ([100, 200, 300], ) + make_betabinom_prob(dx=10, aptbp=1,
-                                                      bptbp=1, aptbq=2., bptbq=1.,),
-        'lda_h0_dx100_v100_t3_p05q06':
-            ([100, 200, 300, ], ) + make_lda_prob(n_words=100, n_topics=3,
-                                                  vocab_size=100,
-                                                  ptb_p=5e-1, ptb_q=0.6),
-        'lda_h1_dx100_v5_t3_p1q05':
-            ([100, 200, 300], ) + make_lda_prob(n_words=100, n_topics=3,
-                                                vocab_size=5,
-                                                ptb_p=1., ptb_q=0.5),
-        'lda_h0_dx50_v100_t3_p1q1':
-            ([100, 200, 300, 400], ) + make_lda_prob(n_words=50, n_topics=3,
+        'lda_h0_dx50_v100_t3_p1q1temp1':
+            ([100, 200, 300,], ) + make_lda_prob(n_words=50, n_topics=3,
                                                 vocab_size=100,
-                                                ptb_p=1., ptb_q=1.),
-        'lda_h0_dx100_v100_t3_p01q05':
-            ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
-                                                vocab_size=100,
-                                                ptb_p=0.1, ptb_q=0.5),
-        'lda_h1_dx100_v100_t3_p1q05':
-            ([100, 200, 300], ) + make_lda_prob(n_words=50, n_topics=3,
-                                                vocab_size=100,
-                                                ptb_p=1, ptb_q=0.5),
-        'lda_h0_dx50_v100_t3_p1q1+1e-4':
-            ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
-                                                vocab_size=100,
-                                                ptb_p=1, ptb_q=1+1e-4),
-        'lda_h0_dx50_v100_t3_p1+1e-1q1':
-            ([100, 200, 300, ], ) + make_lda_prob(n_words=50, n_topics=3,
-                                                vocab_size=100,
-                                                ptb_p=1.1, ptb_q=1),
-        'lda_h0_dx50_v100_t3_p0q05':
-            ([100, 200, 300], ) + make_lda_prob(n_words=50, n_topics=3,
-                                                vocab_size=100,
-                                                ptb_p=0., ptb_q=0.5),
-        'lda_h0_dx50_v100_t3_p05q06':
-            ([100, 200, 300], ) + make_lda_prob(n_words=50, n_topics=3,
-                                                vocab_size=100,
-                                                ptb_p=0.5, ptb_q=0.6),
-        'lda_h0_dx50_v100_t3_p04q05':
-            ([100, 200, 300], ) + make_lda_prob(n_words=50, n_topics=3,
-                                                vocab_size=100,
-                                                ptb_p=0.4, ptb_q=0.5),
-        'lda_h0_dx50_v100_t3_p05q05+1e-2':
-            ([100, 200, 300], ) + make_lda_prob(n_words=50, n_topics=3,
-                                                vocab_size=100,
-                                                ptb_p=0.5, ptb_q=0.51),
-        'lda_h1_dx50_v100_t3_p1q05':
-            ([100, 200, 300], ) + make_lda_prob(n_words=50, n_topics=3,
-                                                vocab_size=100,
-                                                ptb_p=1., ptb_q=0.5),
-        'lda_h1_dx50_v10000_t3_p1q08temp1e-1':
-            ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
-                                                vocab_size=10000,
-                                                ptb_p=1., ptb_q=0.8, temp=0.1),
-        'lda_h1_dx50_v10000_t3_p1q08temp1':
-            ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
-                                                vocab_size=10000,
-                                                ptb_p=1., ptb_q=0.8, temp=1.),
+                                                ptb_p=1., ptb_q=1., temp=1.),
         'lda_h1_dx50_v1000_t3_p1q05temp1':
             ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
                                                 vocab_size=1000,
@@ -615,6 +613,19 @@ def get_ns_pqrsource(prob_label):
             ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
                                                 vocab_size=1000,
                                                 ptb_p=1., ptb_q=0.5, temp=0.1),
+
+        'lda_h0_dx50_v10000_t3_p1q1temp1':
+            ([100, 200, 300,], ) + make_lda_prob(n_words=50, n_topics=3,
+                                                vocab_size=10000,
+                                                ptb_p=1., ptb_q=1., temp=1.),
+        'lda_h1_dx50_v10000_t3_p1q08temp1e-1':
+            ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
+                                                vocab_size=10000,
+                                                ptb_p=1., ptb_q=0.8, temp=0.1),
+        'lda_h1_dx50_v10000_t3_p1q08temp1':
+            ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
+                                                vocab_size=10000,
+                                                ptb_p=1., ptb_q=0.8, temp=1.),
         'lda_h1_dx50_v10000_t3_p1q05temp1e-1':
             ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
                                                 vocab_size=10000,
@@ -627,11 +638,27 @@ def get_ns_pqrsource(prob_label):
             ([100, 200, 300], ) + make_lda_prob(n_words=50, n_topics=3,
                                                 vocab_size=10000,
                                                 ptb_p=0.5, ptb_q=0.6, temp=1e-1),
+        'lda_h1_dx50_v10000_t3_p1q05temp10':
+            ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
+                                                vocab_size=10000,
+                                                ptb_p=1., ptb_q=0.5, temp=10),
         'lda_h0_dx50_v10000_t3_p05q06temp1':
-            ([100, 200, 300], ) + make_lda_prob(n_words=50, n_topics=3,
+            ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
                                                 vocab_size=10000,
                                                 ptb_p=0.5, ptb_q=0.6, temp=1),
-            }  # end of prob2tuples
+        'lda_h0_dx50_v10000_t3_p05q06temp1e-1':
+            ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
+                                                vocab_size=10000,
+                                                ptb_p=0.5, ptb_q=0.6, temp=1e-1),
+        'lda_mix_h1_dx50_v10000_t10_p5e-2q1e-2temp1e-1':
+            ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=10,
+                                                vocab_size=10000,
+                                                ptb_p=2e-2, ptb_q=1e-2, temp=1e-1),
+        'lda_mix_h1_dx50_v10000_t3_p05q02temp1e-1':
+            ([100, 200, 300, 400, 500], ) + make_lda_prob(n_words=50, n_topics=3,
+                                                vocab_size=10000,
+                                                ptb_p=0.5, ptb_q=0.2, temp=1e-1),
+        }  # end of prob2tuples
     if prob_label not in prob2tuples:
         raise ValueError('Unknown problem label. Need to be one of %s'%str(list(prob2tuples.keys()) ))
     return prob2tuples[prob_label]

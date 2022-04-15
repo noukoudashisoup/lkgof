@@ -1,4 +1,4 @@
-"""Simulation to get the test power vs increasing sample size"""
+"""Simulation to get the test power vs increasing MC/burn-in sample size"""
 
 __author__ = 'noukoudashisoup'
 
@@ -16,6 +16,7 @@ import lkgof.data as data
 # goodness-of-fit test
 import lkgof.kernel as kernel
 import lkgof.util as util
+import lkgof.mcmc as mcmc
 from lkgof.mctest import SC_MMD
 from lkgof.goftest import MCParam
 
@@ -89,7 +90,7 @@ def sample_pqr(P, Q, ds_r, n, r, burnin_size=0, mcsize=0, only_from_r=False,
 
 # -------------------------------------------------------
 
-def _met_lksd(P, Q, data_source, b, r, k, mcsize=1,
+def _met_lksd(P, Q, data_source, b, r, k, mcsize=1, ps_p=None, ps_q=None,
               varest=util.second_order_ustat_variance_jackknife):
     """
     Wrapper for LKSD model comparison test (relative test). 
@@ -104,6 +105,7 @@ def _met_lksd(P, Q, data_source, b, r, k, mcsize=1,
         mc_param_q = MCParam(mcsize, b)
         ldcksd = mct.LDC_KSD(P, Q, k, k, seed=r+11, alpha=alpha,
                              mc_param_p=mc_param_p, mc_param_q=mc_param_q,
+                             ps_p=ps_p, ps_q=ps_q,
                              varest=varest,
                              )
         ldcksd_result = ldcksd.perform_test(datr)
@@ -123,10 +125,18 @@ def met_imqlksd_med_mc1(P, Q, data_source, b, r, mcsize=1):
     kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
     X = kernel_data.data()
     d = X.shape[1]
+    dz = P.dim_l
     medX = util.meddistance(X)
     k = kernel.KPIMQ(medX**2 * np.eye(d))
 
-    ldcksd_result = _met_lksd(P, Q, data_source, b, r, k=k, mcsize=mcsize)
+    if type(P) is model.PPCA:
+        bias = 1.
+        def ps_p(X, n_sample, seed, n_burnin=1):
+            with util.NumpySeedContext(seed+133):
+                Z_init = np.random.randn(sample_size, dz) + bias
+            return P.posterior(X, n_sample, seed=seed, n_burnin=n_burnin,
+                               init_params=Z_init)
+    ldcksd_result = _met_lksd(P, Q, data_source, b, r, k=k, mcsize=mcsize, ps_p=ps_p)
     return ldcksd_result
 
 def met_imqlksd_med_mc10(P, Q, data_source, b, r):
@@ -142,17 +152,59 @@ def met_imqlksd_med_mc10000(P, Q, data_source, b, r):
     return met_imqlksd_med_mc1(P, Q, data_source, b, r, mcsize=10000)
 
 
+def met_imqlksd_med_mala_mc1(P, Q, data_source, b, r, mcsize=1):
+    """
+    KSD-based model comparison test
+        * One Median-scaled IMQ kernel for the two statistics.
+        * Use jackknife variance estimator
+    """
+
+    # sample some data 
+    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
+    X = kernel_data.data()
+    d = X.shape[1]
+    medX = util.meddistance(X)
+    k = kernel.KPIMQ(medX**2 * np.eye(d))
+    assert P.dim_l == Q.dim_l
+    dz = P.dim_l 
+    
+    # stepsize = dz**(-1./3) * 1e-3
+    stepsize = dz**(-1./3) * 1e-4
+    bias = 1.
+    def ps_p(X, n_sample, seed, n_burnin=1):
+        with util.NumpySeedContext(seed+133):
+            Z_init = np.random.randn(sample_size, dz) + bias
+        return mcmc.ppca_mala(X, n_sample, Z_init, ppca_model=P,
+                              stepsize=stepsize, seed=seed, n_burnin=n_burnin)
+    def ps_q(X, n_sample, seed, n_burnin=1):
+        with util.NumpySeedContext(seed+134):
+            Z_init = np.random.randn(sample_size, dz)
+        return mcmc.ppca_mala(X, n_sample, Z_init, ppca_model=Q,
+                              stepsize=stepsize, seed=seed, n_burnin=n_burnin)
+
+    ldcksd_result = _met_lksd(P, Q, data_source, b, r, k=k, ps_p=ps_p, ps_q=None, mcsize=mcsize)
+    return ldcksd_result
+
+def met_imqlksd_med_mala_mc10(P, Q, data_source, b, r):
+    return met_imqlksd_med_mala_mc1(P, Q, data_source, b, r, mcsize=10)
+
+def met_imqlksd_med_mala_mc100(P, Q, data_source, b, r):
+    return met_imqlksd_med_mala_mc1(P, Q, data_source, b, r, mcsize=100)
+
+def met_imqlksd_med_mala_mc1000(P, Q, data_source, b, r):
+    return met_imqlksd_med_mala_mc1(P, Q, data_source, b, r, mcsize=1000)
+
+
 def met_dis_imqbowlksd_mc1(P, Q, data_source, b, r, mcsize=1):
     """
     Latent KSD-based model comparison test (relative test).
         * IMQ BoW kernel for discrete observations.
-        * Use U-statistic variance estimator
     """
     if not np.all(P.n_values == Q.n_values):
         raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
     n_values = P.n_values
     d = P.dim
-    k = kernel.KIMQBoW(n_values, d, s2=d**2)
+    k = kernel.KIMQBoW(n_values, d, s2=1)
 
     ldcksd_result = _met_lksd(P, Q, data_source, b, r, k=k, mcsize=mcsize)
     return ldcksd_result
@@ -229,6 +281,10 @@ from lkgof.ex.ex4_vary_mcsizes import met_imqlksd_med_mc10
 from lkgof.ex.ex4_vary_mcsizes import met_imqlksd_med_mc100
 from lkgof.ex.ex4_vary_mcsizes import met_imqlksd_med_mc1000
 from lkgof.ex.ex4_vary_mcsizes import met_imqlksd_med_mc10000
+from lkgof.ex.ex4_vary_mcsizes import met_imqlksd_med_mala_mc1
+from lkgof.ex.ex4_vary_mcsizes import met_imqlksd_med_mala_mc10
+from lkgof.ex.ex4_vary_mcsizes import met_imqlksd_med_mala_mc100
+from lkgof.ex.ex4_vary_mcsizes import met_imqlksd_med_mala_mc1000
 from lkgof.ex.ex4_vary_mcsizes import met_dis_imqbowlksd_mc1
 from lkgof.ex.ex4_vary_mcsizes import met_dis_imqbowlksd_mc10
 from lkgof.ex.ex4_vary_mcsizes import met_dis_imqbowlksd_mc100
@@ -258,10 +314,14 @@ sample_size = 100
 
 # tests to try
 method_funcs = [ 
-    met_imqlksd_med_mc1,
-    met_imqlksd_med_mc10,
-    met_imqlksd_med_mc100,
-    met_imqlksd_med_mc1000,
+    # met_imqlksd_med_mc1,
+    # met_imqlksd_med_mc10,
+    # met_imqlksd_med_mc100,
+    # met_imqlksd_med_mc1000,
+    met_imqlksd_med_mala_mc1,
+    met_imqlksd_med_mala_mc10,
+    met_imqlksd_med_mala_mc100,
+    met_imqlksd_med_mala_mc1000,
     # met_dis_imqbowlksd_mc1,
     # met_dis_imqbowlksd_mc10,
     # met_dis_imqbowlksd_mc100,
@@ -285,7 +345,7 @@ def get_bs_pqrsource(prob_label):
 
     * (P, Q, ds) together specity a three-sample (or model comparison) problem.
     """
-    ppca_burnins = [50*i for i in range(1, 10+1)]
+    ppca_burnins = [50*i for i in range(1, 12+1)]
     lda_burnins = [500*i for i in range(1, 8+1)]
     gdpm_burnins = [200*i for i in range(1, 9+1)]
 
@@ -328,6 +388,9 @@ def get_bs_pqrsource(prob_label):
         'isogdpm_h1_dx10_tr5_p12e-1_q1':
             # list of sample sizes
             (gdpm_burnins, ) + make_dpm_isogauss_prob(tr_size=5, dx=10, ptbp=1.2, ptbq=1.),
+        'isogdpm_h0_dx10_tr5_p9e-1_q1':
+            # list of sample sizes
+            (gdpm_burnins, ) + make_dpm_isogauss_prob(tr_size=5, dx=10, ptbp=0.9, ptbq=1.),
         }  # end of prob2tuples
     if prob_label not in prob2tuples:
         raise ValueError('Unknown problem label. Need to be one of %s'%str(list(prob2tuples.keys()) ))
