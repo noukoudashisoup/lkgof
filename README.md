@@ -17,19 +17,11 @@ It will be necessary to edit out codes for replicating the experiment results; w
 
 ## Requirements
 
-The package requires `numpy`, `scipy`, `autograd`, and `numpyro==0.2.4` (these will be installed when you install the package).
+The package requires `numpy`, `scipy`, `autograd`, and `numpyro==0.8.0` (these will be installed when you install the package).
 NumPyro is only used for the experiment with PPCA models.
 
-We also require the following packages:
-
-* The `freqopttest` (containing the MMD two-sample test) package
-  from  [its git repository](https://github.com/wittawatj/interpretable-test).
-
-* The `kgof` package. This can be obtained from [its git
+We also require the `kgof` package. This can be obtained from [its git
   repository](https://github.com/wittawatj/kernel-gof).
-
-* The `kmod` package. This can be obtained from [its git
-  repository](https://github.com/wittawatj/kernel-gof). This and `freqopttest` are required for the MMD test, a benchmark method in our experiments.
 
 ## Reproduce experimental results
 
@@ -72,3 +64,21 @@ The scratch folder needed by the `independent-jobs` package can be specified in 
 To plot the results, see the experiment's corresponding Jupyter notebook in the
 `ipynb/` folder. For example, for `ex1_vary_n.py` see
 `ipynb/ex1_results.ipynb` to plot the results.
+
+
+## ArXiv experiment
+
+To reproduce our experiment using the arXiv dataset, we require the following packages: 
+
+1. `gensim==4.0.1`
+2. `tqdm`
+
+Download the arXiv data set (Ver. 68) hosted on [Kaggle](https://www.kaggle.com/datasets/Cornell-University/arxiv).
+Make a directory named `arxiv` in the problem directory specified in `lkgof/config.py`; its path is given by the value of `problems_path`:
+
+    # Full path to the problems directory
+    # A "problems" directory contains subdirectories, each containing all files
+    # related to that particular problem e.g., arXiv, etc.
+    'problems_path': '/full/path/to/host/datasets/',
+
+To create datasets and models, run the scripts `preprocess.sh` and `train.sh` in `lkgof/preprocessing`. 

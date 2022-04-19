@@ -12,13 +12,14 @@ import os
 expr_configs = {
     # Full path to the directory to store temporary files when running
     # experiments.
-    'scratch_path': '/nfs/gatsbystor/heishiro/tmp/lkmod',
+    # 'scratch_path': '/nfs/gatsbystor/heishiro/tmp/lkmod',
+    'scratch_path': '/ceph/scratch/heishiro/tmp/lkmod',
 
     # Slurm partitions.
     # When using SlurmComputationEngine for running the experiments, the paritions (groups of computing nodes)
     # can be specified here. Set to None to not set to any value (i.e., use the default partition).
     # The value is a string. For more than one partition, set to, for instance, "wrkstn,compute".
-    'slurm_partitions': "cpu,debug",
+    'slurm_partitions': "cpu,gpu,debug",
     # 'slurm_partitions': None,
 
     # Full path to the directory to store experimental results.
@@ -27,9 +28,8 @@ expr_configs = {
 
     # Full path to the problems directory
     # A "problems" directory contains subdirectories, each containing all files
-    # related to that particular problem e.g., cifar10, LSUN, etc.
-    'problems_path': os.path.join(os.path.dirname(glo.get_root()), 'problems'),
-
+    # related to that particular problem e.g., arXiv, etc.
+    'problems_path': '/nfs/gatsbystor/heishiro/lkmod/problems',
 
     # Full path to the data directory
     'data_path': os.path.join(os.path.dirname(glo.get_root()), 'data'),
