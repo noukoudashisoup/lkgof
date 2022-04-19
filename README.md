@@ -81,4 +81,5 @@ Make a directory named `arxiv` in the problem directory specified in `lkgof/conf
     # related to that particular problem e.g., arXiv, etc.
     'problems_path': '/full/path/to/host/datasets/',
 
+Place the downloaded dataset in the `arxiv` directory. 
 To create datasets and models, run the scripts `preprocess.sh` and `train.sh` in `lkgof/preprocessing`. 
