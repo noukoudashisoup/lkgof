@@ -16,7 +16,6 @@ nltk.download('punkt')
 problem = 'arxiv'
 default_category = 'stat.ME'
 
-
 extra_stop_words = [
     'however', 
     "'s", 'via', 'using', 'study',
@@ -51,9 +50,9 @@ def remove_meaningless_words(text):
 def main():
     category = args.category
     # logging.info('Category: {}'.format(category))
-    datapath = os.path.join(args.data_dir, 'trimmed', 
+    datapath = os.path.join(args.data_dir, args.trimmed_dir, 
             '{}.json'.format(category))
-    outdir = os.path.join(args.data_dir, 'tokenized')
+    outdir = os.path.join(args.data_dir, args.out_dir)
     if not os.path.exists(outdir):
         os.makedirs(outdir)
 
@@ -93,7 +92,11 @@ if __name__ == '__main__':
         description='Extract arXiv articles of a given cateogry',
         )
     parser.add_argument('--data_dir', default=dir_data,)
+    parser.add_argument('--trimmed_dir', default='trimmed',)
     parser.add_argument('-c', '--category', default=default_category,
                         type=str, help='Category to be extracted.')
+    parser.add_argument('--out_dir', default='tokenized',
+                        type=str, help='Name of the directory in which the output is stored.')
+
     args = parser.parse_args()
     main()

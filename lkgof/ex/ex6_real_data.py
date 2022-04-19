@@ -222,9 +222,6 @@ def met_dis_imqbowmmd_cheap(P, Q, data_source, n, r):
     return result
 
 
-
-
-
 def met_dis_hksd(P, Q, data_source, n, r):
     """
     KSD-based model comparison test (relative test). 
@@ -283,21 +280,6 @@ def _met_dis_lksd(P, Q, data_source, n, r, k, mc_sample=None,
     return {
             'test_result': ldcksd_result, 'time_secs': t.secs,
             }
-
-
-def met_dis_hlksd(P, Q, data_source, n, r):
-    """
-    Latent KSD-based model comparison test (relative test). 
-        * Exponentiated Hamming distance kernel for discrete observations.
-    """
-    if not np.all(P.n_values == Q.n_values):
-        raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
-    n_values = P.n_values
-    d = P.dim
-
-    k = kernel.KHamming(n_values, d)
-    result = _met_dis_lksd(P, Q, data_source, n, r, k)
-    return result
 
 
 def met_dis_bowlksd(P, Q, data_source, n, r):
@@ -395,10 +377,6 @@ class Ex6Job(IndependentJob):
 
         IndependentJob.__init__(self, aggregator, walltime=walltime,
                                 memory=memory)
-        # P, P are lkgof.model.LatentVariableModel
-        # self.P = P
-        # self.Q = Q
-        # self.data_source = data_source
         self.prob_label = prob_label
         self.rep = rep
         self.met_func = met_func
@@ -408,9 +386,6 @@ class Ex6Job(IndependentJob):
     # of JobResult base class
     def compute(self):
 
-        # P = self.P
-        # Q = self.Q
-        # data_source = self.data_source 
         r = self.rep
         n = self.n
         met_func = self.met_func
@@ -464,14 +439,9 @@ n_mcsamples = 5000
 
 # tests to try
 method_funcs = [ 
-    # met_dis_bowmmd,
-    # met_dis_nbowmmd,
-    # met_dis_gbowmmd,
     met_dis_imqbowmmd,
     # met_dis_imqbowmmd_moremc,
     # met_dis_imqbowmmd_cheap,
-    # met_dis_hksd,
-    # met_dis_hlksd,
     # met_dis_bowlksd,
     # met_dis_gbowlksd,
     met_dis_imqbowlksd,
@@ -516,7 +486,7 @@ def make_lda_prob(problem, pname, qname, rname, seed=149):
     vocab_size = betap.shape[1]
     n_values = vocab_size*np.ones(n_words, dtype=np.int64)
     alphap = np.load('{}.alpha.npy'.format(modelp_path))
-    print(alphap)
+    # print(alphap)
     modelp = model.LDAEmBayes(alpha=alphap, beta=betap,
                               n_values=n_values)
     
@@ -527,17 +497,9 @@ def make_lda_prob(problem, pname, qname, rname, seed=149):
     betaq = lda.get_topics()
     modelq = model.LDAEmBayes(alpha=alphaq, beta=betaq,
                               n_values=n_values)
-    print(betaq.shape, betaq.min())
+    # print(betaq.shape, betaq.min())
     return modelp, modelq, datar
 
-# P, Q, ds = make_lda_prob(problem='stat.ME_math.PR_stat.TH',
-#                          pname='math.PR', qname='stat.ME', rname='stat.TH')
-# ns = [100, 200, 300]
-ns = [100, 200, 300, 400, 500]
-# P, Q, ds = make_lda_prob(problem='hep-ph_quant-ph_mixture',
-#         pname='hep-ph_quant-ph_0.6', qname='hep-ph_quant-ph_0.7', rname='hep-ph')
-P, Q, ds = make_lda_prob(problem='cs.LG_stat.ME_stat.TH',
-        pname='cs.LG', qname='stat.ME', rname='stat.TH')
 
 def get_ns_pqrsource(prob_label):
     """
@@ -551,40 +513,16 @@ def get_ns_pqrsource(prob_label):
     """
     prob2tuples = {
         # A case where H0 (P is better) is true.
-            # 'arxiv_AP_ME_TH':
-            # ([100, 200, 300, ], ) + make_lda_prob(problem='stat.AP_stat.ME_stat.TH', 
-            #                                     pname='stat.AP',
-            #                                     qname='stat.ME', rname='stat.TH'),
             'arxiv_csLG_ME_TH':
             ([100, 200, 300, 400, 500], ) + make_lda_prob(problem='cs.LG_stat.ME_stat.TH', 
                                                 pname='cs.LG',
                                                 qname='stat.ME', rname='stat.TH'),
-            # 'arxiv_csLG_ML_TH':
-            # ([100, 200, 300,], ) + make_lda_prob(problem='cs.LG_stat.ML_stat.TH', 
-            #                                     pname='cs.LG',
-            #                                     qname='stat.ML', rname='stat.TH'),
-            # 'arxiv_mathPR_statME_statTH':
-            # ([100, 200, 300, 400, 500], ) + make_lda_prob(problem='stat.ME_math.PR_stat.TH', 
-            #                                     pname='math.PR',
-            #                                     qname='stat.ME', rname='stat.TH'),
-            # 'arxiv_astro-ph.GA_astro-ph.SR_P06_Q07_Rastro-ph.SR':
-            # ([100, 200, 300,], ) + make_lda_prob(problem='astro-ph.GA_astro-ph.SR_mixture',
-            #                                     pname='astro-ph.SR_astro-ph.GA_0.6',
-            #                                     qname='astro-ph.SR_astro-ph.GA_0.7', rname='astro-ph.SR'),
-            # 'arxiv_hep-th_quant-ph_P06_Q07_Rquant-ph':
-            # ([100, 200, 300,], ) + make_lda_prob(problem='hep-th_quant-ph_mixture',
-            #                                     pname='quant-ph_hep-th_0.6',
-            #                                     qname='quant-ph_hep-th_0.7', rname='quant-ph'),
-            # 'arxiv_hep-ph_quant-ph_P06_Q07_Rhep-ph':
-            # ([100, 200, 300,], ) + make_lda_prob(problem='hep-ph_quant-ph_mixture',
-            #                                     pname='hep-ph_quant-ph_0.6',
-            #                                     qname='hep-ph_quant-ph_0.7', rname='hep-ph'),
-            # 'arxiv_cond-mat.mtrl-sci_cond-mat.mes-hall':
-            # ([100, 200, 300,], ) + make_lda_prob(problem='cond-mat.mtrl-sci_cond-mat.mes-hall_mixture',
-            #                                     pname='cond-mat.mtrl-sci_cond-mat.mes-hall_0.5',
-            #                                     qname='cond-mat.mtrl-sci_cond-mat.mes-hall_0.7', rname='cond-mat.mtrl-sci'),
-
-            }  # end of prob2tuples
+            'arxiv_mathPR_statME_statTH':
+            ([100, 200, 300, 400, 500], ) + make_lda_prob(problem='stat.ME_math.PR_stat.TH', 
+                                                pname='math.PR',
+                                                qname='stat.ME', rname='stat.TH'),
+            }  
+    # end of prob2tuples
     if prob_label not in prob2tuples:
         raise ValueError('Unknown problem label. Need to be one of %s'%str(list(prob2tuples.keys()) ))
     return prob2tuples[prob_label]
@@ -612,9 +550,6 @@ def run_problem(prob_label):
     else:
         engine = SlurmComputationEngine(batch_parameters, partition=partitions)
     n_methods = len(method_funcs)
-
-    # problem setting
-    ns, P, Q, ds, = get_ns_pqrsource(prob_label)
 
     # repetitions x len(ns) x #methods
     aggregators = np.empty((reps, len(ns), n_methods ), dtype=object)
@@ -681,13 +616,11 @@ def run_problem(prob_label):
     logger.info('Saved aggregated results to %s'%fname)
 
 #---------------------------
-def main():
+if __name__ == '__main__':
     if len(sys.argv) != 2:
         print('Usage: %s problem_label'%sys.argv[0])
         sys.exit(1)
     prob_label = sys.argv[1]
+    # problem setting
+    ns, P, Q, ds, = get_ns_pqrsource(prob_label)
     run_problem(prob_label)
-
-if __name__ == '__main__':
-    main()
-
