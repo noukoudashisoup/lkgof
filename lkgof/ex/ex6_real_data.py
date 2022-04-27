@@ -366,7 +366,6 @@ def met_dis_imqbowlksd_moremc(P, Q, data_source, n, r):
     return result
 
 
-
 # Define our custom Job, which inherits from base class IndependentJob
 class Ex6Job(IndependentJob):
    
@@ -393,6 +392,8 @@ class Ex6Job(IndependentJob):
 
         logger.info("computing. %s. prob=%s, r=%d,\
                 n=%d"%(met_func.__name__, prob_label, r, n))
+
+        _, P, Q, ds, = get_ns_pqrsource(prob_label)
         with util.ContextTimer() as t:
             job_result = met_func(P, Q, ds, n, r)
             # create ScalarResult instance
@@ -620,7 +621,8 @@ if __name__ == '__main__':
     if len(sys.argv) != 2:
         print('Usage: %s problem_label'%sys.argv[0])
         sys.exit(1)
+    global prob_label
     prob_label = sys.argv[1]
     # problem setting
-    ns, P, Q, ds, = get_ns_pqrsource(prob_label)
+    ns, _, _, _, = get_ns_pqrsource(prob_label)
     run_problem(prob_label)
