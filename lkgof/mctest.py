@@ -4,10 +4,11 @@ model comparison tests for latent variable models.
 """
 __author__ = 'noukoudashisoup'
 
+from lkgof.log import logger
 import lkgof
 import lkgof.util as util
 from lkgof import goftest as gof
-from lkgof import log
+from lkgof import log, stein
 from lkgof.goftest import KernelSteinTest
 from lkgof.goftest import LatentKernelSteinTest
 import autograd.numpy as np
@@ -502,3 +503,98 @@ class SC_MMD(object):
 
 
 # end of class SC_MMD
+
+
+class LDC_MFKSD(LDC_KSD):
+    """
+    Minimum prob flow KSD model comparison test for latent variable
+    models.
+    
+    Args:
+    - modelp: model.LatentVariableModel
+    - modelq: model.LatentVariableModel
+    - k: kernel object
+    - l: kernel object
+    - mc_param_p:
+        goftest.MCParam. Parameters required
+        for Monte Carlo approximation
+    - mc_param_q:
+        goftest.MCParam. Parameters required
+        for Monte Carlo approximation
+    - ps_p:
+        posterior sampler for p. Defaults to None.
+    - ps_q:
+        posterior sampler for p. Defaults to None.
+    - alpha: significance level
+    - seed: random seed
+    - varest:
+        Variance estimator method.
+        Defaults to util.second_order_ustat_variance_jackknife
+    """
+
+    def __init__(self, modelp, modelq, k, l,
+                 mc_param_p, mc_param_q,
+                 ps_p=None, ps_q=None,
+                 alpha=0.01, seed=11,
+                 varest=util.second_order_ustat_variance_jackknife,):
+        logger.warning("This class is experimental. ")
+        super(LDC_MFKSD, self).__init__(modelp, modelq, k, l, mc_param_p, mc_param_q,
+                                        ps_p, ps_q, alpha, seed, varest)
+    
+    def compute_stat(self, dat):
+        X = dat.data()
+        n, d = X.shape
+        p = self.modelp
+        q = self.modelq
+        ps_p, n_sample_p, n_burnin_p = self.mc_param_p
+        ps_q, n_sample_q, n_burnin_q = self.mc_param_q
+        seed = self.seed
+        k = self.k
+        l = self.l
+
+        Wp = self.modelp.barker_score(X, n_sample=n_sample_p, 
+                                      seed=seed+1, n_burnin=n_burnin_p)
+        Hp = stein.minflow_stein_kernel_gram(X, Wp, k)
+        statp = ( Hp.sum()-Hp.trace() ) / ( n*(n-1) )
+        
+        Wq = self.modelp.barker_score(X, n_sample=n_sample_q, 
+                                      seed=seed+2, n_burnin=n_burnin_q)
+        Hq = stein.minflow_stein_kernel_gram(X, Wq, l)
+        statq = ( Hq.sum()-Hq.trace() ) / ( n*(n-1) )
+
+        stat = (n**0.5) * (statp - statq)
+        return stat
+
+    def get_mean_variance(self, dat):
+        """Returns esimates of the KSD difference and 
+        its variance"""
+        
+        assert isinstance(self, LDC_KSD)
+        X = dat.data()
+        n, d = X.shape
+        k = self.k
+        l = self.l
+        seed = self.seed
+        modelp = self.modelp
+        modelq = self.modelq
+        ps_p = self.ps_p
+        ps_q = self.ps_q
+        n_sample_p, n_burnin_p = self.mc_param_p
+        n_sample_q, n_burnin_q = self.mc_param_q
+
+        Wp = modelp.barker_score(X, n_sample=n_sample_p, seed=seed+1, n_burnin=n_burnin_p, lazy=False)
+        Hp = stein.minflow_stein_kernel_gram(X, Wp, k)
+        statp = ( Hp.sum()-Hp.trace() ) / ( n*(n-1) )
+        
+        Wq = modelq.barker_score(X, n_sample=n_sample_q, seed=seed+2, n_burnin=n_burnin_q, lazy=False)
+        Hq = stein.minflow_stein_kernel_gram(X, Wq, k)
+        statq = ( Hq.sum()-Hq.trace() ) / ( n*(n-1) )
+
+        mean_h1 = (statp - statq)
+        # log.l().info('diff = {}-{}'.format(statp, statq))
+        var_h1 = self.varest(Hp-Hq)
+
+        return mean_h1, var_h1
+
+# end class LDC_KSD
+

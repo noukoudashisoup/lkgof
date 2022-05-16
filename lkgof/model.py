@@ -346,7 +346,7 @@ class LDAEmBayes(LatentVariableModel):
             Z_init = Z.data()
             # Z_init = np.random.randint(0, n_topics, [n_docs, n_words])
         Z_batch = lda_collapsed_gibbs(X, n_sample, Z_init,
-                                      n_topics, alpha, beta, seed,
+                                      alpha, beta, seed,
                                       n_burnin=n_burnin)
         return {'Z': Z_batch}
                             
@@ -377,6 +377,48 @@ class LDAEmBayes(LatentVariableModel):
             return Data(X), Data(np.array(Z_))
         return Data(X)
 
+    def barker_score(self, X, n_sample=500, seed=13, n_burnin=100, lazy=False):
+        """Evaluate the averaged score function of the joint at X and latents,
+        where the averaging is over latent samples provided there 
+        are multiple samples.
+
+        This method computes the score function of x
+        with \sum_{i=1}^m score(x, latents_i) / m 
+
+        Args:
+            X (numpy.ndarray): array of size n x d 
+
+        Returns:
+            numpy array of size (n, d)
+        """
+        n_values = self.n_values.reshape([1, -1])
+        alpha = self.alpha
+        beta = self.beta 
+        n_topics = beta.shape[0]
+        n_docs, n_words = X.shape
+
+        Z_init=np.random.randint(0, n_topics, size=X.shape)
+        if lazy:
+            Z = mcmc.lda_collapsed_gibbs(X, n_sample, Z_init, alpha, beta, seed=seed, 
+                                         n_burnin=n_burnin)
+            Z = np.vstack([Z]*len(mcmc.score_shifts))
+        else:
+            Z = mcmc.lda_barker_score_gibbs(X, n_sample=n_sample, Z_init=Z_init,
+                                            alpha=alpha, beta=beta, seed=seed, 
+                                            n_burnin=n_burnin)
+        n_samples = Z.shape[1] if len(Z.shape)==3 else 1
+        # the following is possible because of conditional independence
+        S = np.zeros([Z.shape[0], n_docs, n_words])
+        for si, shift in  enumerate(mcmc.score_shifts):
+            for i in range(n_samples):
+                X_ = np.mod(X+shift, n_values)
+                log_word_prob = np.log(beta[Z[si, i], X])
+                shift_log_word_prob = np.log(beta[Z[si, i], X_])
+                score_sample = (
+                    1./ (1 + np.exp(log_word_prob - shift_log_word_prob))
+                )
+                S[si] = S[si] + (score_sample-S[si])/(i+1)
+        return  S
 
 class DPMIsoGaussBase(LatentVariableModel):
     """Gaussian Dirichlet Process Mixture model.

@@ -1,12 +1,11 @@
 """Module containing MCMC methods for latent variable models"""
 import numpy as np
-import scipy.stats as stats
 from lkgof import util
 from lkgof.util import random_choice_prob_index
 from lkgof import model as lvm
 
 
-def lda_collapsed_gibbs(X, n_sample, Z_init, n_topics,
+def lda_collapsed_gibbs(X, n_sample, Z_init, 
                         alpha, beta, seed=13,
                         n_burnin=1):
     """Samples the latents of data X using a collapsed Gibbs
@@ -29,6 +28,7 @@ def lda_collapsed_gibbs(X, n_sample, Z_init, n_topics,
     """
     assert X.shape == Z_init.shape
     n_docs, n_words = X.shape
+    n_topics = beta.shape[0]
 
     def sampling(Z0, n_iter, keepsample=False):
         Z_ = Z0.copy()
@@ -316,3 +316,80 @@ def ppca_mala(X, n_sample, Z_init, ppca_model, stepsize=1e-3, seed=13, n_burnin=
         Z_ = sampling(Z_init, n_burnin)
         Z_batch = sampling(Z_, n_sample, keepsample=True)
     return {'latent': Z_batch}
+
+
+def lda_barker_collapsed_gibbs_step(X, Z0, n_iter, alpha, beta, dim, shift=1, keepsample=False):
+    Z_ = Z0.copy()
+    n_topics, vocab_size = beta.shape
+    n_docs, n_words = X.shape
+    Xmod = X.copy()
+    Xmod[:, dim] = np.mod(X[:, dim]+shift, vocab_size)
+    if keepsample:
+        Z_batch = np.empty([n_iter, n_docs, n_words],
+                            dtype=np.int)
+    # topic count
+    C = np.zeros([n_docs, n_topics])
+    for i_d in range(n_docs):
+        u, cnt = np.unique(Z_[i_d], return_counts=True)
+        C[i_d, u] = cnt
+
+    n_docs_range = np.arange(n_docs)
+    for i in range(n_iter):
+        j = np.random.randint(0, n_words)
+        C[n_docs_range, Z_[:, j]] -= 1
+        # p = n_docs x n_topics
+        likelihood = beta[:, X[:, j]] + beta[:, Xmod[:, j]]
+        p = likelihood.T * (C+alpha) 
+        p = p / np.sum(p, axis=1, keepdims=True)
+        Z_[:, j] = random_choice_prob_index(p)
+        C[n_docs_range, Z_[:, j]] += 1
+        if keepsample:
+            Z_batch[i] = Z_.copy()
+    if keepsample:
+        return Z_batch[:, :, dim]
+    return Z_
+
+score_shifts = [1, -1]
+
+def lda_barker_score_gibbs(X, n_sample, Z_init, 
+                           alpha, beta, seed=13, n_burnin=1):
+    """Samples the latents of data X using a collapsed Gibbs
+    sampler.
+
+    Args:
+        X (np.ndarray): n x d array
+        n_sample (int): number of samples
+        Z_init (np.ndarray):
+            Initialisation for the latents.
+            Array of size n x d.
+        alpha (np.ndarray): Array of n_topics.
+        beta (np.ndarray): Word distributions. Array of n_topics x vocab_size.
+        seed (int, optional): Random seed. Defaults to 13.
+        n_burnin (int, optional): Burn-in sample size. Defaults to 1.
+
+    Returns:
+        np.ndarray: Array of size len(score_shifts) x nsample x n x d.
+    """
+    assert X.shape == Z_init.shape
+
+    n_docs, n_words = X.shape
+
+    def score_sample(shift):
+        # print(shift)
+        Z_batch = np.empty((n_sample, n_docs, n_words), dtype=Z_init.dtype)
+        with util.NumpySeedContext(seed):
+            for di in range(n_words):
+                # print(di)
+                Z = Z_init
+                Z = lda_barker_collapsed_gibbs_step(X, Z, n_iter=n_burnin,
+                                                    alpha=alpha, beta=beta,
+                                                    dim=di, shift=shift, keepsample=False)
+                Z = lda_barker_collapsed_gibbs_step(X, Z, n_iter=n_sample,
+                                                    alpha=alpha, beta=beta,
+                                                    dim=di, shift=shift, keepsample=True)
+                Z_batch[:, :, di] = Z             
+        return Z_batch
+
+    Z_batches = [score_sample(shift) for shift in score_shifts]
+    return np.array(Z_batches)
+

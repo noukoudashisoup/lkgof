@@ -366,6 +366,41 @@ def met_dis_imqbowlksd_moremc(P, Q, data_source, n, r):
     return result
 
 
+def met_dis_imqbow_mflksd(P, Q, data_source, n, r,
+                          varest=util.second_order_ustat_variance_jackknife,
+    ):
+    """
+    Latent MFKSD-based model comparison test (relative test).
+        * IMQ BoW kernel for discrete observations.
+        * Use jackknife variance estimator
+    """
+    if not np.all(P.n_values == Q.n_values):
+        raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
+    n_values = P.n_values
+    d = P.dim
+
+    k = kernel.KIMQBoW(n_values, d, s2=1)
+    # sample some data 
+    datr = sample_pqr(None, None, data_source, n, r, only_from_r=True)
+
+    # Start the timer here
+    n_mc = 1000
+    with util.ContextTimer() as t:
+        n_burnin_p = 500
+        n_burnin_q = 500
+        mc_param_p = MCParam(n_mc, n_burnin_p)
+        mc_param_q = MCParam(n_mc, n_burnin_q)
+        ldcksd = mct.LDC_MFKSD(P, Q, k, k, seed=r+11, alpha=alpha,
+                               mc_param_p=mc_param_p, mc_param_q=mc_param_q,
+                               varest=varest,
+                             )
+        ldcksd_result = ldcksd.perform_test(datr)
+    return {
+            'test_result': ldcksd_result, 'time_secs': t.secs,
+            }
+
+
+
 # Define our custom Job, which inherits from base class IndependentJob
 class Ex6Job(IndependentJob):
    
@@ -422,6 +457,7 @@ from lkgof.ex.ex6_real_data import met_dis_imqbowmmd_moremc
 from lkgof.ex.ex6_real_data import met_dis_imqbowmmd_cheap
 from lkgof.ex.ex6_real_data import met_dis_imqbowlksd
 from lkgof.ex.ex6_real_data import met_dis_imqbowlksd_moremc
+from lkgof.ex.ex6_real_data import met_dis_imqbow_mflksd
 
 #--- experimental setting -----
 ex = 6
@@ -446,7 +482,8 @@ method_funcs = [
     # met_dis_bowlksd,
     # met_dis_gbowlksd,
     met_dis_imqbowlksd,
-    #  met_dis_imqbowlksd_moremc,
+    # met_dis_imqbow_mflksd,
+    met_dis_imqbowlksd_moremc,
    ]
 
 

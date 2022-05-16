@@ -34,6 +34,7 @@ def get_func_tuples():
             ('met_dis_gbowlksd', 'KSD (Gauss BoW)', 'bv-.',),
             ('met_dis_ebowlksd', 'KSD (Exp BoW)', 'C1v--',),
             ('met_dis_imqbowlksd', 'LKSD (IMQ BoW)', 'gv:',),
+            ('met_dis_imqbow_mflksd', 'LMFKSD (IMQ BoW)', 'C3P:',),
             ('met_dis_imqbowlksd_moremc', 'LKSD (IMQ BoW) More MC', 'gp--',),
            ]
 

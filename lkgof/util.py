@@ -58,7 +58,8 @@ def random_choice(a, n):
     axis = len(a.shape) - 1
     r = np.expand_dims(np.random.rand(*a.shape[:-1], n), axis=axis)
     cumsum = np.expand_dims(a.cumsum(axis=axis), axis=-1)
-    return (r < cumsum).argmax(axis=axis).T
+    idx = [axis] + [i for i in range(0, axis)]
+    return (r < cumsum).argmax(axis=axis).transpose(idx)
 
 
 def choice(a, n):

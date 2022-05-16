@@ -23,7 +23,7 @@ class DSMultivariateBern(DataSource):
         sampler = stats.bernoulli.rvs
         d = self.d
         with util.NumpySeedContext(seed=seed):
-            X = sampler(p=self.probs, size=[n, d]).astype(np.float)
+            X = sampler(p=self.probs, size=[n, d]).astype(np.int)
         return Data(X)
 
 

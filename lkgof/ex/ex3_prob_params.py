@@ -318,6 +318,40 @@ def met_dis_imqbowlksd_vstatvar(P, Q, data_source, r):
     return met_imqlksd_med(P, Q, data_source, r, varest=varest)
 
 
+def met_dis_imqbow_mflksd(P, Q, data_source, r,
+                          varest=util.second_order_ustat_variance_jackknife,
+    ):
+    """
+    Latent MFKSD-based model comparison test (relative test).
+        * IMQ BoW kernel for discrete observations.
+        * Use jackknife variance estimator
+    """
+    if not np.all(P.n_values == Q.n_values):
+        raise ValueError('P, Q have different domains. P.n_values = {}, Q.n_values = {}'.format(P.n_values, Q.n_values))
+    n_values = P.n_values
+    d = P.dim
+
+    k = kernel.KIMQBoW(n_values, d, s2=1)
+    # sample some data 
+    datr = sample_pqr(None, None, data_source, sample_size, r, only_from_r=True)
+
+    # Start the timer here
+    n_mc = 1000
+    with util.ContextTimer() as t:
+        n_burnin_p = 500
+        n_burnin_q = 500
+        mc_param_p = MCParam(n_mc, n_burnin_p)
+        mc_param_q = MCParam(n_mc, n_burnin_q)
+        ldcksd = mct.LDC_MFKSD(P, Q, k, k, seed=r+11, alpha=alpha,
+                               mc_param_p=mc_param_p, mc_param_q=mc_param_q,
+                               varest=varest,
+                             )
+        ldcksd_result = ldcksd.perform_test(datr)
+    return {
+            'test_result': ldcksd_result, 'time_secs': t.secs,
+            }
+
+
 # Define our custom Job, which inherits from base class IndependentJob
 class Ex3Job(IndependentJob):
    
@@ -388,6 +422,7 @@ from lkgof.ex.ex3_prob_params import met_dis_imqbowlksd
 from lkgof.ex.ex3_prob_params import met_dis_imqbowlksd_ustatvar
 from lkgof.ex.ex3_prob_params import met_dis_imqbowlksd_vstatvar
 from lkgof.ex.ex3_prob_params import met_dis_imqbowmmd
+from lkgof.ex.ex3_prob_params import met_dis_imqbow_mflksd
 
 #--- experimental setting -----
 ex = 3
@@ -396,10 +431,10 @@ ex = 3
 alpha = 0.05
 
 # repetitions for each sample size 
-reps = 300
+reps = 100
 
 # sample size 
-sample_size = 300
+sample_size = 100
 
 # num of problems
 num_problems = 1
@@ -420,7 +455,7 @@ n_mcsamples = 10000
 # tests to try
 method_funcs = [ 
     # met_gmmd_med,
-    # met_gksd_med,
+    # met_glksd_med,
     # met_imqlksd_med,
     # met_imqlksd_med_ustatvar,
     # met_imqlksd_med_vstatvar,
@@ -429,6 +464,7 @@ method_funcs = [
     # met_imqlksd_cov,
     met_dis_imqbowmmd,
     met_dis_imqbowlksd,
+    # met_dis_imqbow_mflksd,
     # met_dis_imqbowlksd_ustatvar,
     # met_dis_imqbowlksd_vstatvar,
    ]
