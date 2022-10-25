@@ -1,6 +1,7 @@
 # all utility functions in kgof.util are visible.
 from kgof.util import *
 import numpy as np
+import autograd.numpy as anp
 from scipy import sparse
 
 
@@ -180,7 +181,32 @@ def featurize_bow(X, W):
     indptr = np.arange(0, n*d+1, d)
     X_ = sparse.csr_matrix((data, indices, indptr), shape=(n, W))
     return X_
-     
+
+def rejection_sampling(n, cond_fn, sample_fn, seed=30):
+    with NumpySeedContext(seed=seed):
+        n_accept = 0 
+        samples = []
+        while n_accept < n:
+            sample = sample_fn()
+            idx = cond_fn(sample)
+            samples.append(sample[idx])
+            n_accept += np.count_nonzero(idx)
+        return np.vstack(samples)[:n]
+
+
+def softplus(x, beta=1, threshold=20):
+    idx = (x*beta > threshold)
+    y = np.empty_like(x)
+    y = np.log1p(np.exp(beta*x))/beta
+    y[idx] = x[idx]
+    return y
+
+def inv_softplus(x, beta=1, threshold=20):
+    if (x < 0).any():
+        raise ValueError("input has to be positive")
+    y = np.log(np.expm1(beta*x))/beta
+    return y
+
 def test_sample():
     N = 3
     K = 5
@@ -195,6 +221,38 @@ def test_sample():
     print(sample)
     print(sample_)
 
+def test_rejection_sampler():
+    n = 10
+    d = 5
+    sampler_fn = lambda : np.random.randn(n, d)
+    cond_fn = lambda X: (X>=0).all(axis=1)
+    X = rejection_sampling(n, cond_fn, sampler_fn)
+    print(X.shape)
+
+def smooth_rect(X):
+    idx = (X>1e-10)
+    return anp.where(idx, anp.exp(-1/X), 1e-15)
+
+def der_smooth_rect(X):
+    idx = (X>1e-10)
+    return anp.where(idx, anp.divide(anp.exp(-1/X), X**2), 1e-15)
+
+def cutoff(X, a, b):
+    Fb = smooth_rect(b-X)
+    Fa = smooth_rect(X-a)
+    idx = (Fb > 1e-12)
+    Y = anp.where(idx, 1./(1.+Fa/Fb), 1e-15)
+    idx_ = (Fa < 1e-12)
+    return anp.where(idx_, 1., Y)
+
+def der_cutoff(x, a, b):
+    Fb = smooth_rect(b-x)
+    Fa = smooth_rect(x-a)
+    d1 = -der_smooth_rect(b-x) / (Fb+Fa)
+    d2 = -cutoff(x, a, b)/(Fb + Fa) * (der_smooth_rect(x-a)-der_smooth_rect(b-x))
+    return d1 + d2
+
+
 def main():
     n = 10
     d = 3
@@ -205,5 +263,6 @@ def main():
     print(meds)
 
 if __name__ == '__main__':
-    test_sample()
+    # test_sample()
+    test_rejection_sampler()
     # main()

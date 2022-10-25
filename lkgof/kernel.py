@@ -1,10 +1,12 @@
 """Module containing kernel-related classes"""
 
 from kgof.kernel import *
+import lkgof.util as util
 import autograd.numpy as np
 from lkgof.density import DiscreteFunction
-from lkgof.util import featurize_bow
+from lkgof.util import der_smooth_rect, featurize_bow, smooth_rect
 import scipy.spatial.distance
+import autograd
 
 
 class DKSTKernel(Kernel, DiscreteFunction):
@@ -71,6 +73,264 @@ class DKSTKernel(Kernel, DiscreteFunction):
         return self._d
 
 # end KSTKernel
+
+
+class KSTProduct(KSTKernel):
+    """KSTKernel representing the product of two kernel
+
+    Attributes:
+        k1:
+            KSTKernel object
+        k2: 
+            KSTKernel object
+    """
+    def __init__(self, k1, k2):
+        self.k1 = k1
+        self.k2 = k2
+
+    def eval(self, X, Y):
+        K = self.k1.eval(X, Y)
+        K *= self.k2.eval(X, Y)
+        return K
+
+    def pair_eval(self, X, Y):
+        K = self.k1.pair_eval(X, Y)
+        K *= self.k2.pair_eval(X, Y)
+        return K
+
+    def gradX_Y(self, X, Y, dim):
+        k1 = self.k1
+        k2 = self.k2 
+        K1 = k1.eval(X, Y)
+        K2 = k2.eval(X, Y)
+        G1 = k1.gradX_Y(X, Y, dim)
+        G2 = k2.gradX_Y(X, Y, dim)
+        return K1 * G2 + K2 * G1
+
+    def gradY_X(self, X, Y, dim):
+        return self.gradX_Y(X, Y, dim).T
+
+    def gradX(self, X, Y):
+        k1 = self.k1
+        k2 = self.k2 
+        K1 = k1.eval(X, Y)
+        K2 = k2.eval(X, Y)
+        G1 = k1.gradX(X, Y)
+        G2 = k2.gradX(X, Y)
+        T1 = np.einsum('ij,ijk->ijk', K1, G2)
+        T2 = np.einsum('ij,ijk->ijk', K2, G1)
+        return T1 + T2
+
+    def gradXY_sum(self, X, Y):
+        d = X.shape[1]
+        assert Y.shape[1] == d
+        k1 = self.k1
+        k2 = self.k2
+        K1 = k1.eval(X, Y)
+        K2 = k2.eval(X, Y)
+        T1 = K1 * k2.gradXY_sum(X, Y) + K2*k1.gradXY_sum(X, Y)
+        T2 = np.zeros_like(T1)
+        for j in range(d):
+            T2 += k1.gradX_Y(X, Y, j) * k2.gradY_X(X, Y, j)
+            T2 += k2.gradX_Y(X, Y, j) * k1.gradY_X(X, Y, j)
+        return T1 + T2
+
+# end of KSTProduct
+
+class WeightFunction:
+    """
+    Abstract class for a feature map of a kernel.
+    Assume the map is differentiable.
+    """
+
+    @abstractmethod
+    def __call__(self, x):
+        """
+        Return a feature vector for the input x.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def parX(self, X, dim):
+        """Return the partial derivative at X w.r.t. dim"""
+        pass
+    
+    def grad(self, X):
+        d = X.shape[1]
+        return np.concatenate([self.parX(X, dim)[:, np.newaxis] for dim in range(d)], axis=1)
+        # return autograd.elementwise_grad(self)(X)
+
+
+# end of WeightFunction
+
+class KSTWeight(KSTKernel):
+    """KSTKernel representing the product of two kernels
+    Attributes:
+        w_func: WeightFunction
+    """
+    def __init__(self, w_func):
+        self.w_func = w_func
+
+    def _eval(self, X, Y):
+        w = self.w_func
+        Wx = w(X)
+        Wy = w(Y)
+        return Wx, Wy
+
+    def eval(self, X, Y):
+        Wx, Wy = self._eval(X, Y)
+        return np.outer(Wx, Wy)
+
+    def pair_eval(self, X, Y):
+        Wx, Wy = self._eval(X, Y)
+        return Wx * Wy
+
+    def gradX_Y(self, X, Y, dim):
+        w = self.w_func
+        Gx = w.parX(X, dim)
+        Wy = w(Y)
+        return np.outer(Gx, Wy)
+
+    def gradY_X(self, X, Y, dim):
+        return self.gradX_Y(Y, X, dim).T
+
+    def gradXY_sum(self, X, Y):
+        w = self.w_func
+        Gx = w.grad(X)
+        Gy = w.grad(Y)
+        return Gx @ Gy.T
+
+# End of KSTWeight
+
+class WeightCoordinateProduct(WeightFunction):
+
+    def __call__(self, x):
+        """
+        Return a feature vector for the input x.
+        """
+        d = x.shape[1]
+        y = x / (1+x**2)**0.5
+        return np.exp(np.log(y).mean(axis=1))
+
+    def parX(self, X, dim):
+        """Return the partial derivative at X w.r.t. dim"""
+        _, d = X.shape
+        idx = np.arange(d)
+        idx = np.delete(idx, dim)
+        X_ = X[:, idx]
+        X_ = X_/ (1+X_**2)**0.5
+        coef = np.exp(np.log(X_).sum(axis=1)/d)
+
+        Xd = X[:, dim]
+        P = (Xd**0.5 / (1+Xd**0.5))**(1./d-1) / d
+        P *= 1./(1+Xd**2)**0.5 - Xd**2/(1+Xd**2)**1.5 
+        return coef*P
+    
+
+class WeightIntevalProduct(WeightFunction):
+
+    def __init__(self, L, U):
+        self.L = L
+        self.U = U 
+
+    def __call__(self, x):
+        """
+        Return a feature vector for the input x.
+        """
+        d = x.shape[1]
+        y = -(x-self.L) * (x-self.U) / (1+x**2)
+        return np.prod(y, axis=-1)**(1./d)
+
+    def parX(self, X, dim):
+        """Return the partial derivative at X w.r.t. dim"""
+        U = self.U
+        L = self.L
+        _, d = X.shape
+        idx = np.arange(d)
+        idx = np.delete(idx, dim)
+        X_ = X[:, idx]
+        y = -(X_-self.L[idx]) * (X_-self.U[idx]) / (1+X_**2)
+        coef = np.prod(y, axis=-1)**(1./d)
+
+        Xd = X[:, dim, ]
+        norm = (1+Xd**2)
+        P = (-(Xd-U[dim]) * (Xd-L[dim])/norm)**(1./d-1) / d
+        P *= -(2*Xd-(U[dim]+L[dim]))/norm + 2*Xd*(Xd-U[dim])*(Xd-L[dim])/norm**2
+        return coef*P
+    
+    def grad(self, X):
+        d = X.shape[1]
+        return np.concatenate([self.parX(X, dim)[:, np.newaxis] for dim in range(d)], axis=1)
+
+
+class WeightSmoothIntevalProduct(WeightFunction):
+
+    def __init__(self, L, U):
+        self.L = L
+        self.U = U 
+        ratio = 0.99
+        self.lmin = ratio * np.min(np.abs(L)) 
+        self.umin = ratio * np.min(np.abs(U))
+
+    def __call__(self, x):
+        """
+        Return a feature vector for the input x.
+        """
+        d = x.shape[1]
+        y = util.cutoff(x, self.umin, np.abs(self.U))
+        y += util.cutoff(-x, self.lmin, np.abs(self.L)) - 1.
+        return np.prod(y+1e-15, axis=-1) ** (1./d)
+
+    def parX(self, X, dim):
+        """Return the partial derivative at X w.r.t. dim"""
+        _, d = X.shape
+        coef = 1.
+        if d > 1:
+            idx = np.arange(d)
+            idx = np.delete(idx, dim)
+            X_ = X[:, idx]
+            U_ = self.U[idx]
+            L_ = self.L[idx]
+            y = util.cutoff(X_, self.umin, np.abs(U_))
+            y += util.cutoff(-X_, self.lmin, np.abs(L_)) - 1
+            coef = np.prod(y, axis=-1) ** (1./d)
+
+        Xd = X[:, dim, ]
+        P = util.cutoff(Xd, self.umin, np.abs(self.U[dim]))
+        P += util.cutoff(-Xd, self.lmin, np.abs(self.L[dim])) - 1.
+        P = (P+1e-15)**(1./d-1) / d
+        P1 = util.der_cutoff(Xd, self.umin, np.abs(self.U[dim]))
+        P2 = util.der_cutoff(-Xd, self.lmin, np.abs(self.L[dim]))
+        return coef*(P1+P2)*P
+
+
+class ExpTruncWeight(WeightFunction):
+
+    def __call__(self, x):
+        """
+        Return a feature vector for the input x.
+        """
+        idx = (x > 0)
+        y = np.zeros_like(x)
+        y[idx] = np.exp(-1/x[idx])
+        return np.prod(y, axis=-1)
+
+    def parX(self, X, dim):
+        """Return the partial derivative at X w.r.t. dim"""
+        n, d = X.shape
+        idx = np.arange(d)
+        idx = np.delete(idx, dim)
+        X_ = X[:, idx]
+        coef = self(X_)
+
+        Xd = X[:, dim, np.newaxis]
+        P = (self(Xd)/Xd[:, 0]**2).reshape([n])
+        return coef*P
+    
+    def grad(self, X):
+        d = X.shape[1]
+        return np.concatenate([self.parX(X, dim)[:, np.newaxis] for dim in range(d)], axis=1)
+
 
 
 class KHamming(DKSTKernel):
@@ -163,6 +423,7 @@ class KExpInner(DKSTKernel):
         X = 2 * (X-0.5)
         Y = 2 * (Y-0.5)
         return np.exp(np.mean(X*Y, axis=1))
+
 
 
 def bump_l2(X, r, scale=1e-2):
@@ -278,7 +539,7 @@ class KGaussBumpL2(KGauss):
 
         Return a numpy array of size nx x ny.
         """
-        return self.gradX_Y(X, Y, dim).T
+        return self.gradX_Y(Y, X, dim).T
         
     def pair_gradY_X(self, X, Y):
         """
@@ -689,7 +950,7 @@ class KPIMQ(KSTKernel):
 
         Return a numpy array of size nx x ny.
         """
-        return self.gradX_Y(Y, X, dim)
+        return self.gradX_Y(Y, X, dim).T
 
     def gradXY_sum(self, X, Y):
         """

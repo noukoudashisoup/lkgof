@@ -178,6 +178,133 @@ class PPCA(LatentVariableModel):
                                      seed=seed, init_params=init_params)
 
 
+class PositivePPCA(PPCA):
+    """LatentVariableModel class implementing truncated PPCA
+    supported on the positive orthant at the origin. 
+        Args:
+            weight: a weight matrix for the likelihood
+            var: the variance parameter for the likelihood
+            dim: the dimentionality of the observable variable
+            dim_l: the dimensionality of the latent variable
+    """
+
+    var_type_disc = False
+
+    def __init__(self, weight, var):
+        super(PositivePPCA, self).__init__(weight, var)
+
+    def sample(self, n, seed=3, return_latent=False):
+        dim_l = self.dim_l
+        dim = self.dim
+        var = self.var
+
+        def accept_cond(X, Z):
+            x1 = (X>0).all(axis=1)
+            x2 = (Z>0).all(axis=1)
+            return np.logical_and(x1, x2)
+
+        def ppca_sampler(n):
+            Z = np.random.randn(n, dim_l)
+            mean = Z @ self.weight.T
+            X = var**0.5 * np.random.randn(n, dim) + mean
+            return X, Z
+
+        n_accept = 0
+        samples = []
+        lsamples = []
+        with util.NumpySeedContext(seed=seed):
+            while n_accept < n:
+                X, Z = ppca_sampler(n-n_accept)
+                idx = accept_cond(X, Z)
+                samples.append(X[idx])
+                if return_latent:
+                    lsamples.append(Z[idx])
+                n_accept += np.count_nonzero(idx)
+        samples = np.vstack(samples)[:n]
+        if not return_latent:
+            return Data(samples)
+        lsamples = np.vstack(lsamples)[:n]
+        return Data(samples), Data(lsamples)
+
+    def posterior(self, X, n_sample, seed=13,
+                  n_burnin=200, stepsize=1e-3, ):
+        n = X.shape[0]
+        Z_init = util.softplus(np.random.randn(n, self.dim_l), beta=10)
+        latents = mcmc.posppca_exchange(X, n_sample=n_sample, 
+                                        Z_init=Z_init, pppca_model=self, 
+                                        n_burnin=n_burnin, stepsize=stepsize,
+                                        seed=seed,
+                                        )
+        return latents
+
+# End of PositivePPCA
+
+
+class BoundedPPCA(PPCA):
+    """LatentVariableModel class implementing truncated PPCA
+    supported on the positive orthant at the origin. 
+        Args:
+            weight: a weight matrix for the likelihood
+            var: the variance parameter for the likelihood
+            dim: the dimentionality of the observable variable
+            dim_l: the dimensionality of the latent variable
+    """
+
+    var_type_disc = False
+
+    def __init__(self, weight, var, lim_upper=-1, lim_lower=1):
+        super(BoundedPPCA, self).__init__(weight, var)
+        self.lim_upper = lim_upper
+        self.lim_lower = lim_lower
+
+    def sample(self, n, seed=3, return_latent=False):
+        dim_l = self.dim_l
+        dim = self.dim
+        var = self.var
+        lu = self.lim_upper
+        ll = self.lim_lower
+
+        def accept_cond(X):
+            x1 = (X<lu).all(axis=1)
+            x2 = (X>ll).all(axis=1)
+            return np.logical_and(x1, x2)
+
+        def ppca_sampler(n):
+            Z = np.random.randn(n, dim_l)
+            mean = Z @ self.weight.T
+            X = var**0.5 * np.random.randn(n, dim) + mean
+            return X, Z
+
+        n_accept = 0
+        samples = []
+        lsamples = []
+        with util.NumpySeedContext(seed=seed):
+            while n_accept < n:
+                X, Z = ppca_sampler(n-n_accept)
+                idx = accept_cond(X)
+                samples.append(X[idx])
+                if return_latent:
+                    lsamples.append(Z[idx])
+                n_accept += np.count_nonzero(idx)
+        samples = np.vstack(samples)[:n]
+        if not return_latent:
+            return Data(samples)
+        lsamples = np.vstack(lsamples)[:n]
+        return Data(samples), Data(lsamples)
+
+    def posterior(self, X, n_sample, seed=13,
+                  n_burnin=200, stepsize=1e-3, ):
+        n = X.shape[0]
+        Z_init = util.softplus(np.random.randn(n, self.dim_l), beta=10)
+        latents = mcmc.bppca_exchange(X, n_sample=n_sample,
+                                      Z_init=Z_init, bppca_model=self, 
+                                      n_burnin=n_burnin, stepsize=stepsize,
+                                      seed=seed,
+                                      )
+        return latents
+
+
+
 class BetaBinomSinglePrior(LatentVariableModel):
     """
     (Multivariate) Beta Binomial Model with a single 

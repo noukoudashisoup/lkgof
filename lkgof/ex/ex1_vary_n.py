@@ -16,6 +16,7 @@ import lkgof.data as data
 # goodness-of-fit test
 import lkgof.kernel as kernel
 import lkgof.util as util
+import lkgof.mcmc as mcmc
 from lkgof.mctest import SC_MMD
 from lkgof.goftest import MCParam
 
@@ -140,8 +141,6 @@ def met_gmmd_med(P, Q, data_source, n, r):
     # medxyz = np.mean([medxz, medyz])
     medX = util.meddistance(X)
     k = kernel.KGauss(sigma2=medX**2)
-    print(medX)
-    exit()
     scmmd_result = _met_mmd(P, Q, data_source, n, r, k=k,)
     return scmmd_result
 
@@ -172,6 +171,28 @@ def met_imqmmd_med(P, Q, data_source, n, r):
     d = X.shape[1]
     medX = util.meddistance(X)
     k = kernel.KPIMQ(medX**2 * np.eye(d))
+
+    scmmd_result = _met_mmd(P, Q, data_source, n, r, k=k)
+    return scmmd_result
+
+
+def met_imqmmd_medtrunc(P, Q, data_source, n, r):
+    """
+    Bounliphone et al., 2016's MMD-based 3-sample test.
+    * IMQ kernel with median scaling with truncation weight
+    """
+    # sample some data
+    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
+    X = kernel_data.data()
+    d = X.shape[1]
+    medX = util.meddistance(X)
+    kimq = kernel.KPIMQ(np.eye(d)*medX**2)
+    # kimq = kernel.KPIMQ(np.cov(X, rowvar=False))
+    L = P.lim_lower * np.ones(d)
+    U = P.lim_upper * np.ones(d)
+    w = kernel.WeightSmoothIntevalProduct(L=L, U=U)
+    kw = kernel.KSTWeight(w)
+    k = kernel.KSTProduct(kimq, kw)
 
     scmmd_result = _met_mmd(P, Q, data_source, n, r, k=k)
     return scmmd_result
@@ -260,7 +281,7 @@ def met_gksd_med(P, Q, data_source, n, r,
     return dcksd_result
 
 
-def _met_lksd(P, Q, data_source, n, r, k,
+def _met_lksd(P, Q, data_source, n, r, k, ps_p=None, ps_q=None,
               varest=util.second_order_ustat_variance_jackknife):
     """
     Wrapper for LKSD model comparison test (relative test). 
@@ -277,6 +298,7 @@ def _met_lksd(P, Q, data_source, n, r, k,
         mc_param_q = MCParam(n_mcsamples, n_burnin_q)
         ldcksd = mct.LDC_KSD(P, Q, k, k, seed=r+11, alpha=alpha,
                              mc_param_p=mc_param_p, mc_param_q=mc_param_q,
+                             ps_p=ps_p, ps_q=ps_q,
                              varest=varest,
                              )
         ldcksd_result = ldcksd.perform_test(datr)
@@ -343,6 +365,47 @@ def met_imqlksd_med_vstatvar(P, Q, data_source, n, r,
     """
     varest = util.second_order_ustat_variance_vstat
     return met_imqlksd_med(P, Q, data_source, n, r, varest=varest)
+
+
+def met_imqlksd_medtrunc(P, Q, data_source, n, r, 
+                    varest=util.second_order_ustat_variance_jackknife,
+):
+    """
+    KSD-based model comparison test
+        * One Median-scaled IMQ kernel for the two statistics.
+        * Use jackknife variance estimator
+    """
+
+    # sample some data 
+    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
+    X = kernel_data.data()
+    d = X.shape[1]
+    medX = util.meddistance(X)
+    kimq = kernel.KPIMQ(np.eye(d) * medX**2)
+    # kimq = kernel.KPIMQ(np.cov(X, rowvar=False))
+    # k = kernel.KGauss(sigma2=medX**2)
+    L = P.lim_lower * np.ones(d)
+    U = P.lim_upper * np.ones(d)
+    w = kernel.WeightSmoothIntevalProduct(L=L, U=U)
+    kw = kernel.KSTWeight(w)
+    k = kernel.KSTProduct(kimq, kw)
+    dz = P.dim_l
+
+    stepsize = dz**(-1./3) * 1e-3
+    def ps_p(X, n_sample, seed, n_burnin=1):
+        with util.NumpySeedContext(seed+133):
+            Z_init = np.random.randn(n, dz)
+        return mcmc.bppca_exchange(X, n_sample, Z_init, bppca_model=P,
+                              stepsize=stepsize, seed=seed, n_burnin=n_burnin)
+        
+    def ps_q(X, n_sample, seed, n_burnin=1):
+        with util.NumpySeedContext(seed+134):
+            Z_init = np.random.randn(n, dz)
+        return mcmc.bppca_exchange(X, n_sample, Z_init, bppca_model=Q,
+                              stepsize=stepsize, seed=seed, n_burnin=n_burnin)
+
+    ldcksd_result = _met_lksd(P, Q, data_source, n, r, k=k, ps_p=ps_p, ps_q=ps_q, varest=varest)
+    return ldcksd_result
 
 
 def met_imqlksd_cov(P, Q, data_source, n, r):
@@ -422,12 +485,14 @@ from lkgof.ex.ex1_vary_n import _met_ksd
 from lkgof.ex.ex1_vary_n import _met_lksd
 from lkgof.ex.ex1_vary_n import met_gmmd_med
 from lkgof.ex.ex1_vary_n import met_imqmmd_med
+from lkgof.ex.ex1_vary_n import met_imqmmd_medtrunc
 from lkgof.ex.ex1_vary_n import met_imqmmd_cov
 from lkgof.ex.ex1_vary_n import met_gksd_med
 from lkgof.ex.ex1_vary_n import met_imqksd_med
 from lkgof.ex.ex1_vary_n import met_imqksd_cov
 from lkgof.ex.ex1_vary_n import met_glksd_med
 from lkgof.ex.ex1_vary_n import met_imqlksd_med
+from lkgof.ex.ex1_vary_n import met_imqlksd_medtrunc
 from lkgof.ex.ex1_vary_n import met_imqlksd_cov
 from lkgof.ex.ex1_vary_n import met_imqlksd_med_ustatvar
 from lkgof.ex.ex1_vary_n import met_imqlksd_med_vstatvar
@@ -436,7 +501,7 @@ from lkgof.ex.ex1_vary_n import met_imqlksd_med_vstatvar
 ex = 1
 
 # significance level of the test
-alpha = 0.01
+alpha = 0.05
 
 # repetitions for each sample size 
 reps = 300
@@ -447,18 +512,20 @@ kernel_datasize = 1000
 # burnin size
 burnin_sizes = {
     model.PPCA: 200,
+    model.BoundedPPCA: 500,
     model.DPMIsoGaussBase: 1000,
 }
 
 # Markov chain sample size 
-n_mcsamples = 500
+# n_mcsamples = 500
+n_mcsamples = 2000
 
 # tests to try
 method_funcs = [ 
-    met_gmmd_med,
-    met_gksd_med,
-    met_glksd_med,
-    # met_imqmmd_med,
+    # met_gmmd_med,
+    # met_gksd_med,
+    # met_glksd_med,
+    met_imqmmd_med,
     # met_imqksd_med,
     # met_imqlksd_med,
     # met_imqlksd_med_ustatvar,
@@ -466,6 +533,8 @@ method_funcs = [
     #met_imqmmd_cov,
     # met_imqksd_cov,
     # met_imqlksd_cov,
+    # met_imqmmd_medtrunc,
+    met_imqlksd_medtrunc,
    ]
 
 # If is_rerun==False, do not rerun the experiment if a result file for the current
@@ -476,7 +545,10 @@ is_rerun = False
 
 def make_ppca_prob(dx=10, dz=5, var=1.0,
                    ptbp=1., ptbq=1.,
-                   seed=13, same=False):
+                   seed=13, same=False, 
+                   truncate=False,
+                   bppca_bound=10.,
+                   ):
     """LDA problem. Perturb one element of 
     the weight matrix.
 
@@ -496,16 +568,20 @@ def make_ppca_prob(dx=10, dz=5, var=1.0,
 
     with util.NumpySeedContext(seed):
         weight = np.random.uniform(0, 1., [dx, dz])
-    ppca_r = model.PPCA(weight, var)
+    ppca_r = (model.PPCA(weight, var) if not truncate
+              else model.BoundedPPCA(weight, var, lim_upper=bppca_bound, lim_lower=-bppca_bound))
     weightp = weight.copy()
     weightp[0, 0] = weightp[0, 0] + ptbp
-    modelp = model.PPCA(weightp, var)
+    modelp = (model.PPCA(weightp, var) if not truncate 
+              else model.BoundedPPCA(weightp, var, lim_upper=bppca_bound, lim_lower=-bppca_bound))
     if same:
-        modelq = model.PPCA(weightp, var)
+        modelq = (model.PPCA(weightp, var) if not truncate 
+              else model.BoundedPPCA(weightp, var, lim_upper=bppca_bound, lim_lower=-bppca_bound))
     else:
         weightq = weight.copy()
         weightq[0, 0] = weightq[0, 0] + ptbq
-        modelq = model.PPCA(weightq, var)
+        modelq = (model.PPCA(weightq, var) if not truncate
+                  else model.BoundedPPCA(weightq, var, lim_upper=bppca_bound, lim_lower=-bppca_bound))
     ds = ppca_r.get_datasource()
 
     return modelp, modelq, ds
@@ -586,6 +662,26 @@ def get_ns_pqrsource(prob_label):
         'ppca_h0_dx100_dz10_p1_q1+1e-5':
             # list of sample sizes
             ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=100, dz=10, ptbp=1., ptbq=1.+1e-5),
+        'bppca_h0_dx5_dz2_p1_q1+1e-5':
+            # list of sample sizes
+            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=5, dz=2, ptbp=1., 
+                                                                ptbq=1.+1e-5, truncate=True),
+        'bppca_h1_dx5_dz2_p1+1e-1_q1':
+            # list of sample sizes
+            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=5, dz=2, ptbp=1.+1e-1,
+                                                                truncate=True),
+        'bppca_h1_dx100_dz10_p2_q1_b10':
+            # list of sample sizes
+            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=100, dz=10, ptbp=2,
+                                                                truncate=True, bppca_bound=10),
+        'bppca_h1_dx100_dz10_p3_q1_b5':
+            # list of sample sizes
+            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=100, dz=10, ptbp=3,
+                                                                truncate=True, bppca_bound=5),
+        'bppca_h0_dx100_dz10_p1_q1+1e-5_b10':
+            # list of sample sizes
+            ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=100, dz=10, ptbq=1.+1e-5,
+                                                                truncate=True, bppca_bound=10),
         'isogdpm_h0_dx10_tr10_p1_q2':
             # list of sample sizes
             ([i*100 for i in range(1, 3+1)], ) + make_dpm_isogauss_prob(tr_size=10, dx=50, ptbp=1., ptbq=2),

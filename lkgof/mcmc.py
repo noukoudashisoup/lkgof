@@ -393,3 +393,214 @@ def lda_barker_score_gibbs(X, n_sample, Z_init,
     Z_batches = [score_sample(shift) for shift in score_shifts]
     return np.array(Z_batches)
 
+
+def posppca_exchange(X, n_sample, Z_init, pppca_model, stepsize=1e-3, seed=13, n_burnin=1):
+    """Samples the latents of data X using MALA with a fixed step size.
+
+    Args:
+        X (np.ndarray): n x d array
+        n_sample (int): number of samples
+        Z_init (np.ndarray):
+            Initialisation for the latents.
+            Array of size n x d.
+        model: model.PPCA
+        seed (int, optional): Random seed. Defaults to 13.
+        n_burnin (int, optional): Burn-in sample size. Defaults to 1.
+
+    Returns:
+        dict containing np.ndarray of nz x d.
+    """
+    assert X.shape[0] == Z_init.shape[0]
+    assert isinstance(pppca_model, lvm.PositivePPCA)
+    W = pppca_model.weight
+    d = pppca_model.dim
+    var = pppca_model.var
+    n, dz = Z_init.shape
+    beta = 100
+
+    def log_grad(Z0, X_):
+        return -Z0 + (X_ - Z0 @ W.T) @ W / var
+
+    def log_prop_density_ratio(Zprop, Z0, X_):
+        # diff_forward = util.inv_softplus(Zprop, beta=beta) - Z0 - stepsize*log_grad(Z0)
+        diff_forward = Zprop - Z0 - stepsize*log_grad(Z0, X_)
+        diff_norm_forward = -np.sum(diff_forward**2, axis=-1)/(4.*stepsize)
+        # diff_norm_forward += -np.log( -(np.expm1(-beta*Zprop)) ).sum(axis=-1)
+
+        # diff_backward = util.inv_softplus(Z0, beta=beta) - Zprop - stepsize*log_grad(Zprop)
+        diff_backward = Z0 - Zprop - stepsize*log_grad(Zprop, X_)
+        diff_norm_backward = -np.sum(diff_backward**2, axis=-1)/(4.*stepsize)
+        # diff_norm_backward += -np.log( -(np.expm1(-beta*Z0)) ).sum(axis=-1)
+
+        return (diff_norm_backward-diff_norm_forward) 
+
+    def sample_from_likelihood(Z):
+        nsample = Z.shape[0]
+        X = np.empty([nsample, d])
+        notaccepted = np.full([nsample,], True)
+        mean = Z @ W.T
+        nsample_range = np.arange(nsample)
+        while np.any(notaccepted):
+            n_nacp = np.count_nonzero(notaccepted)
+            X_ = var**0.5 * np.random.randn(n_nacp, d) + mean[notaccepted]
+            idx = (X_>0).all(axis=1)
+            update_idx = nsample_range[notaccepted][idx]
+            X[update_idx] = X_[idx]
+            notaccepted[update_idx] = False
+        return X
+    
+    def log_prior_ratio(Z1, Z2):
+        p1 = -0.5 * (Z1**2).sum(axis=1)
+        p2 = -0.5 * (Z2**2).sum(axis=1)
+        return p1 - p2
+
+    def log_likelihood_ratio(X1, X2, Z1, Z2):
+        log_joint1 = -0.5*np.sum((X1-Z1@W.T)**2, axis=-1)/var
+        log_joint2 = -0.5*np.sum((X2-Z2@W.T)**2, axis=-1)/var
+        return (log_joint1 - log_joint2)
+        
+    ones = np.ones(n)
+    def sampling(Z0, n_iter, keepsample=False):
+        assert len(Z0.shape) == 2
+        Z_ = Z0.copy()
+        if keepsample:
+            Z_batch = np.empty([n_iter, n, dz])
+        for i in range(n_iter):
+            print(i)
+            Zprop = (Z_ + stepsize*log_grad(Z_, X)
+                    + (2*stepsize)**0.5 * np.random.randn(n, dz,))
+            #Zprop = util.softplus(Zprop, beta=beta)
+            idx = np.all(Zprop>0, axis=1)
+            accept_prob = np.zeros(n)
+            Zprop_idx_ = Zprop[idx]
+            Xprop = sample_from_likelihood(Zprop_idx_)
+            Z_idx_ = Z_[idx]
+            X_idx_ = X[idx]
+            accept_prob[idx] = log_prior_ratio(Zprop_idx_, Z_idx_)
+            accept_prob[idx] += log_likelihood_ratio(X_idx_, X_idx_, Zprop_idx_, Z_idx_)
+            accept_prob[idx] += log_likelihood_ratio(Xprop, Xprop, Z_idx_, Zprop_idx_)
+            accept_prob[idx] += log_prop_density_ratio(Zprop_idx_, Z_idx_, X_idx_)
+            accept_prob[idx] = np.exp(accept_prob[idx])
+            accept_prob[idx] = np.minimum(accept_prob[idx], ones[idx])
+
+            u = np.random.random(size=[n])
+            update_idx = (u <= accept_prob)
+            Z_[update_idx] = Zprop[update_idx]
+            if keepsample:
+                Z_batch[i] = Z_
+        if keepsample:
+            return Z_batch
+        return Z_
+
+    with util.NumpySeedContext(seed):
+        Z_ = sampling(Z_init, n_burnin)
+        Z_batch = sampling(Z_, n_sample, keepsample=True)
+    return {'latent': Z_batch}
+
+
+def bppca_exchange(X, n_sample, Z_init, bppca_model, stepsize=1e-3, seed=13, n_burnin=1):
+    """Samples the latents of data X using MALA with a fixed step size.
+
+    Args:
+        X (np.ndarray): n x d array
+        n_sample (int): number of samples
+        Z_init (np.ndarray):
+            Initialisation for the latents.
+            Array of size n x d.
+        model: model.PPCA
+        seed (int, optional): Random seed. Defaults to 13.
+        n_burnin (int, optional): Burn-in sample size. Defaults to 1.
+
+    Returns:
+        dict containing np.ndarray of nz x d.
+    """
+    assert X.shape[0] == Z_init.shape[0]
+    assert isinstance(bppca_model, lvm.BoundedPPCA)
+    W = bppca_model.weight
+    d = bppca_model.dim
+    var = bppca_model.var
+    n, dz = Z_init.shape
+
+    def log_grad(Z0, X_):
+        return -Z0 + (X_ - Z0 @ W.T) @ W / var
+
+    def log_prop_density_ratio(Zprop, Z0, X_):
+        diff_forward = Zprop - Z0 - stepsize*log_grad(Z0, X_)
+        diff_norm_forward = -np.sum(diff_forward**2, axis=-1)/(4.*stepsize)
+
+        diff_backward = Z0 - Zprop - stepsize*log_grad(Zprop, X_)
+        diff_norm_backward = -np.sum(diff_backward**2, axis=-1)/(4.*stepsize)
+        return (diff_norm_backward-diff_norm_forward) 
+
+    def sample_from_likelihood(Z):
+        lu = bppca_model.lim_upper
+        ll = bppca_model.lim_lower
+
+        nsample = Z.shape[0]
+        X = np.empty([nsample, d])
+        notaccepted = np.full([nsample,], True)
+        mean = Z @ W.T
+        nsample_range = np.arange(nsample)
+
+        nmax = 1
+        npar = 100
+        cnt = 0
+
+        while np.any(notaccepted) and cnt < nmax:
+            n_acpt = np.count_nonzero(notaccepted)
+            X_ = var**0.5 * np.random.randn(npar, n_acpt, d) + mean[notaccepted]
+            idx = np.logical_and((X_<lu).all(axis=-1), (X_>ll).all(axis=-1))
+            accepted_idx = np.any(idx, axis=0)
+            accepted_paralell_sample_idx = np.argmin(idx[:, accepted_idx]<1, axis=0)
+            update_idx = nsample_range[notaccepted][accepted_idx]
+            X[update_idx] = X_[accepted_paralell_sample_idx, accepted_idx]
+            notaccepted[update_idx] = False
+            cnt += 1
+        if cnt == nmax:
+            n_acpt = np.count_nonzero(notaccepted)
+            X_ = var**0.5 * np.random.randn(n_acpt, d) + mean[notaccepted]
+            X[notaccepted] = np.clip(X_, ll, lu)
+        return X
+    
+    def log_prior_ratio(Z1, Z2):
+        p1 = -0.5 * (Z1**2).sum(axis=1)
+        p2 = -0.5 * (Z2**2).sum(axis=1)
+        return p1 - p2
+
+    def log_likelihood_ratio(X1, X2, Z1, Z2):
+        log_joint1 = -0.5*np.sum((X1-Z1@W.T)**2, axis=-1)/var
+        log_joint2 = -0.5*np.sum((X2-Z2@W.T)**2, axis=-1)/var
+        return (log_joint1 - log_joint2)
+        
+    ones = np.ones(n)
+    def sampling(Z0, n_iter, keepsample=False):
+        assert len(Z0.shape) == 2
+        Z_ = Z0.copy()
+        if keepsample:
+            Z_batch = np.empty([n_iter, n, dz])
+        for i in range(n_iter):
+            Zprop = (Z_ + stepsize*log_grad(Z_, X)
+                    + (2*stepsize)**0.5 * np.random.randn(n, dz,))
+            accept_prob = np.zeros(n)
+            Xprop = sample_from_likelihood(Zprop)
+            accept_prob = log_prior_ratio(Zprop, Z_)
+            accept_prob += log_likelihood_ratio(X, X, Zprop, Z_)
+            accept_prob += log_likelihood_ratio(Xprop, Xprop, Z_, Zprop)
+            accept_prob += log_prop_density_ratio(Zprop, Z_, X)
+            accept_prob = np.exp(accept_prob)
+            accept_prob = np.minimum(accept_prob, ones)
+
+            u = np.random.random(size=[n])
+            update_idx = (u <= accept_prob)
+            Z_[update_idx] = Zprop[update_idx]
+            if keepsample:
+                Z_batch[i] = Z_
+        if keepsample:
+            return Z_batch
+        return Z_
+
+    with util.NumpySeedContext(seed):
+        Z_ = sampling(Z_init, n_burnin)
+        Z_batch = sampling(Z_, n_sample, keepsample=True)
+    return {'latent': Z_batch}
+
