@@ -252,6 +252,37 @@ def der_cutoff(x, a, b):
     d2 = -cutoff(x, a, b)/(Fb + Fa) * (der_smooth_rect(x-a)-der_smooth_rect(b-x))
     return d1 + d2
 
+def bump_l2(X, r, frac=0.95):
+    if frac <= 0 or frac >1:
+        raise ValueError('frac has to between 0 and 1')
+    norm = anp.sum(X**2, axis=-1)**0.5
+    return cutoff(norm, frac*r, r)
+
+def partial_bump_l2(X, r, dim, frac=0.95):
+    """Return partial derivative
+    with respect to dim-th coordinate of 
+    (n,)-array"""
+    if frac <= 0 or frac >1:
+        raise ValueError('frac has to between 0 and 1')
+    _, d = X.shape
+    Xd = X[:, dim]
+    norm = anp.sum(X**2, axis=1)**0.5
+    r_ = frac * r
+    if d == 1:
+        return der_cutoff(norm, r_, r)
+    return der_cutoff(norm, r_, r) * Xd / norm
+
+
+def grad_bump_l2(X, r, frac=0.95):
+    """Return gradient of bump function
+    of (n,d)-array"""
+    if frac <= 0 or frac >1:
+        raise ValueError('frac has to between 0 and 1')
+    norm = anp.sum(X**2, axis=1)**0.5
+    r_ = frac * r
+    P = der_cutoff(norm, r_, r) * X / norm
+    return P
+
 
 def main():
     n = 10

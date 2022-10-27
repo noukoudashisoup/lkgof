@@ -498,7 +498,7 @@ def posppca_exchange(X, n_sample, Z_init, pppca_model, stepsize=1e-3, seed=13, n
     return {'latent': Z_batch}
 
 
-def bppca_exchange(X, n_sample, Z_init, bppca_model, stepsize=1e-3, seed=13, n_burnin=1):
+def truncated_ppca_exchange_mala(X, n_sample, Z_init, model, stepsize=1e-3, seed=13, n_burnin=1):
     """Samples the latents of data X using MALA with a fixed step size.
 
     Args:
@@ -507,7 +507,7 @@ def bppca_exchange(X, n_sample, Z_init, bppca_model, stepsize=1e-3, seed=13, n_b
         Z_init (np.ndarray):
             Initialisation for the latents.
             Array of size n x d.
-        model: model.PPCA
+        model: model.TruncatedPPCA
         seed (int, optional): Random seed. Defaults to 13.
         n_burnin (int, optional): Burn-in sample size. Defaults to 1.
 
@@ -515,10 +515,10 @@ def bppca_exchange(X, n_sample, Z_init, bppca_model, stepsize=1e-3, seed=13, n_b
         dict containing np.ndarray of nz x d.
     """
     assert X.shape[0] == Z_init.shape[0]
-    assert isinstance(bppca_model, lvm.BoundedPPCA)
-    W = bppca_model.weight
-    d = bppca_model.dim
-    var = bppca_model.var
+    assert isinstance(model, lvm.TruncatedPPCA)
+    W = model.weight
+    d = model.dim
+    var = model.var
     n, dz = Z_init.shape
 
     def log_grad(Z0, X_):
@@ -533,23 +533,20 @@ def bppca_exchange(X, n_sample, Z_init, bppca_model, stepsize=1e-3, seed=13, n_b
         return (diff_norm_backward-diff_norm_forward) 
 
     def sample_from_likelihood(Z):
-        lu = bppca_model.lim_upper
-        ll = bppca_model.lim_lower
-
         nsample = Z.shape[0]
         X = np.empty([nsample, d])
         notaccepted = np.full([nsample,], True)
         mean = Z @ W.T
         nsample_range = np.arange(nsample)
 
-        nmax = 1
-        npar = 100
+        nmax = 2
+        npar = 10
         cnt = 0
 
         while np.any(notaccepted) and cnt < nmax:
             n_acpt = np.count_nonzero(notaccepted)
             X_ = var**0.5 * np.random.randn(npar, n_acpt, d) + mean[notaccepted]
-            idx = np.logical_and((X_<lu).all(axis=-1), (X_>ll).all(axis=-1))
+            idx = model.accept_cond(X_)
             accepted_idx = np.any(idx, axis=0)
             accepted_paralell_sample_idx = np.argmin(idx[:, accepted_idx]<1, axis=0)
             update_idx = nsample_range[notaccepted][accepted_idx]
@@ -559,7 +556,7 @@ def bppca_exchange(X, n_sample, Z_init, bppca_model, stepsize=1e-3, seed=13, n_b
         if cnt == nmax:
             n_acpt = np.count_nonzero(notaccepted)
             X_ = var**0.5 * np.random.randn(n_acpt, d) + mean[notaccepted]
-            X[notaccepted] = np.clip(X_, ll, lu)
+            X[notaccepted] = model.enforce_constraint(X_)
         return X
     
     def log_prior_ratio(Z1, Z2):

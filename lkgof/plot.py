@@ -7,6 +7,7 @@ __author__ = 'wittawat'
 import lkgof.glo as glo
 import matplotlib
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import AxesGrid
 import autograd.numpy as np
 
 
@@ -19,6 +20,7 @@ def get_func_tuples():
             ('met_gmmd_med', 'MMD (Gauss-med)', 'mo-.',),
             ('met_imqmmd_cov', 'MMD (IMQ-cov)', 'mo--',),
             ('met_imqmmd_med', 'MMD (IMQ-med)', 'mo:',),
+            ('met_imqmmd_medtrunc', 'MMD (IMQ-med)', 'mo:',),
             ('met_gksd_med', 'KSD (Gauss-med)', 'r*-.',),
             ('met_imqksd_cov', 'KSD (IMQ-cov)', 'r*--',),
             ('met_imqksd_med', 'KSD (IMQ-med)', 'r*:',),
@@ -26,15 +28,17 @@ def get_func_tuples():
             ('met_glksd_med', 'LKSD (Gauss-med)', 'gv-.',),
             ('met_imqlksd_cov', 'LKSD (IMQ-cov)', 'gv--',),
             ('met_imqlksd_med', 'LKSD (IMQ-med)', 'gv:',),
+            ('met_imqlksd_medtrunc', 'LKSD (IMQ-med)', 'gv:',),
+            ('met_imqlksd_med_balltrunc', 'LKSD (IMQ-med)', 'gv:',),
 
             ('met_dis_gbowmmd', 'MMD (GBoW)', 'mo-',),
-            ('met_dis_imqbowmmd', 'MMD (IMQ BoW)', 'mo:',),
+            ('met_dis_imqbowmmd', 'MMD', 'mo:',),
             ('met_dis_imqbowmmd_moremc', 'MMD (IMQBoW) More MC', 'mo--',),
             ('met_dis_imqbowmmd_cheap', 'MMD (IMQBoW) cheap', 'mo-',),
             ('met_dis_gbowlksd', 'KSD (Gauss BoW)', 'bv-.',),
             ('met_dis_ebowlksd', 'KSD (Exp BoW)', 'C1v--',),
-            ('met_dis_imqbowlksd', 'LKSD (IMQ BoW)', 'gv:',),
-            ('met_dis_imqbow_mflksd', 'LMFKSD (IMQ BoW)', 'C3P:',),
+            ('met_dis_imqbowlksd', 'LKSD', 'gv:',),
+            ('met_dis_imqbow_mflksd', 'LKSD (Alt.)', 'C3P:',),
             ('met_dis_imqbowlksd_moremc', 'LKSD (IMQ BoW) More MC', 'gp--',),
            ]
 
@@ -198,7 +202,12 @@ def plot_prob_reject(ex, fname, func_xvalues, xlabel, func_title=None,
     # {'test_result': (dict from running perform_test(te) '...':..., }
     jr = results['job_results']
     if ex == 3 and len(jr.shape) > 3:
+        mean = np.mean(vf_pval(jr), axis=1)
+        std_rejs = np.std(mean, axis=0)
+        lowerpec_rejs = np.percentile(mean, 5, axis=0)
+        upperpec_rejs = np.percentile(mean, 95, axis=0)
         jr = jr.reshape((-1,)+jr.shape[2:])
+
     rejs = vf_pval(jr)
     # print(np.mean(rejs, axis=1)[:, :, 1])
     repeats, _, n_methods = jr.shape
@@ -235,6 +244,14 @@ def plot_prob_reject(ex, fname, func_xvalues, xlabel, func_title=None,
         # print('pval', method_label, (pvals[:, :, i]))
         print('pval', method_label, np.mean(pvals[:, :, i], axis=0))
         plt.plot(xvalues, mean_rejs[:, i], fmt, label=method_label, fillstyle='none')
+        if ex == 3:
+            y = mean_rejs[:, i]
+            yerr = std_rejs[:, i]
+            # yerr = np.vstack([y-lowerpec_rejs[:, i], upperpec_rejs[:, i]-y])
+            # print('stds', yerr, method_label)
+            plt.errorbar(xvalues, y, yerr=yerr, fmt=fmt, label=method_label, fillstyle='none', alpha=.5)
+        else:
+            plt.plot(xvalues, mean_rejs[:, i], fmt, label=method_label, fillstyle='none')
     '''
     else:
         # h0 is true 
@@ -451,3 +468,112 @@ def get_density_cmap():
     list_colors.insert(0, (1, 1, 1))
     lscm = matplotlib.colors.LinearSegmentedColormap.from_list("my_Reds", list_colors)
     return lscm
+
+
+def plot_prob_reject_heatmap(ex, fname, func_xvalues, func_yvalues, xlabel, ylabel, 
+                             func_title=None, return_plot_values=False):
+    """
+    plot the empirical probability that the statistic is above the threshold.
+    This can be interpreted as type-1 error (when H0 is true) or test power 
+    (when H1 is true). The plot is against the specified x-axis.
+
+    - ex: experiment number 
+    - fname: file name of the aggregated result
+    - func_xvalues: function taking aggregated results dictionary and return the values 
+        to be used for the x-axis values.            
+    - func_yvalues: function taking aggregated results dictionary and return the values 
+        to be used for the x-axis values.            
+    - xlabel: label of the x-axis. 
+    - ylabel: label of the y-axis. 
+    - func_title: a function: results dictionary -> title of the plot
+    - return_plot_values: if true, also return a PlotValues as the second
+      output value.
+
+    Return loaded results
+    """
+    #from IPython.core.debugger import Tracer 
+    #Tracer()()
+
+    results = glo.ex_load_result(ex, fname)
+
+    def rej_accessor(jr):
+        rej = jr['test_result']['h0_rejected']
+        # When used with vectorize(), making the value float will make the resulting 
+        # numpy array to be of float. nan values can be stored.
+        return float(rej)
+
+    def pval_accessor(jr):
+        pval = jr['test_result']['pvalue']
+        return float(pval)
+    
+    def stat_accessor(jr):
+        stat = jr['test_result']['test_stat']
+        return stat
+
+    #value_accessor = lambda job_results: job_results['test_result']['h0_rejected']
+    vf_pval = np.vectorize(rej_accessor)
+    # results['job_results'] is a dictionary: 
+    # {'test_result': (dict from running perform_test(te) '...':..., }
+    jr = results['job_results']
+    rejs = vf_pval(jr)
+    repeats, _, _, n_methods = jr.shape
+
+    vf_pval = np.vectorize(pval_accessor)
+    pvals = vf_pval(jr)
+    # std_pvals = np.std(vf_pval(results['job_results']), axis=0)
+
+    stats = np.vectorize(stat_accessor)(jr)
+
+    # yvalues (corresponding to xvalues) x #methods
+    mean_rejs = np.mean(rejs, axis=0)
+    #print mean_rejs
+    #std_pvals = np.std(rejs, axis=0)
+    #std_pvals = np.sqrt(mean_rejs*(1.0-mean_rejs))
+
+    xvalues = func_xvalues(results)
+    yvalues = func_yvalues(results)
+
+    # ns = np.array(results[xkey])
+    line_styles = func_plot_fmt_map()
+    method_labels = get_func2label_map()
+    
+    func_names = [f.__name__ for f in results['method_funcs'] ]
+    plotted_methods = []
+
+    fig = plt.figure(figsize=(10, 10))
+
+    grid = AxesGrid(fig, (1, 1, 1),
+                nrows_ncols=(1, n_methods),
+                axes_pad=1,
+                cbar_mode='single',
+                cbar_location='right',
+                cbar_pad=0.2
+                )
+
+    for i, ax in enumerate(grid):
+        # fmt = line_styles[func_names[i]]
+        method_label = method_labels[func_names[i]]
+        plotted_methods.append(method_label)
+        extent = (min(xvalues), max(xvalues), min(yvalues), max(yvalues))
+        im = ax.imshow(mean_rejs[:, :, i], vmin=0, vmax=1., origin='lower', extent=extent, cmap='hot_r')
+        ax.set_title(method_label)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.xaxis.set_minor_formatter(matplotlib.ticker.ScalarFormatter())
+        ax.yaxis.set_minor_formatter(matplotlib.ticker.ScalarFormatter())
+    cbar = ax.cax.colorbar(im)
+    # fig.subplots_adjust(right=0.8)
+    # fig.colorbar(pos, ax=ax)
+    # alpha = results['alpha']
+    # plt.legend(loc='best')
+    # title = '%s. %d trials. $\\alpha$ = %.2g.'%( results['prob_label'],
+    #         repeats, alpha) if func_title is None else func_title(results)
+    # plt.title(title)
+    # plt.grid()
+    # if return_plot_values:
+    #     return results, PlotValues(xvalues=xvalues, methods=plotted_methods,
+    #             plot_matrix=mean_rejs.T)
+    # else:
+    #     return results

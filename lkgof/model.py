@@ -178,6 +178,103 @@ class PPCA(LatentVariableModel):
                                      seed=seed, init_params=init_params)
 
 
+class TruncatedPPCA(PPCA):
+    """LatentVariableModel class implementing truncated PPCA
+    supported on the positive orthant at the origin. 
+        Args:
+            weight: a weight matrix for the likelihood
+            var: the variance parameter for the likelihood
+            dim: the dimentionality of the observable variable
+            dim_l: the dimensionality of the latent variable
+    """
+
+    def __init__(self, weight, var):
+        super(TruncatedPPCA, self).__init__(weight, var)
+
+    @abstractmethod
+    def accept_cond(self, X):
+        """Indicates which points are in the truncted region
+
+        Args:
+            X (ndarray): [n1, n2, ..., nk, d] array
+
+        Returns:
+            ndarray: array of size [n1, n2, ..., nk]
+        """
+        pass
+
+    @abstractmethod
+    def enforce_constraint(self, X):
+        """Convert the input array to belong to the truncation region
+
+        Args:
+            X (ndarray): [n1, n2, ..., nk, d] array
+
+        Returns:
+            ndarray: array of size [n1, n2, ..., nk, d], converted input data X
+        """
+        pass
+
+
+    def sample(self, n, seed=3, return_latent=False):
+        dim_l = self.dim_l
+        dim = self.dim
+        var = self.var
+
+        def ppca_sampler(n):
+            Z = np.random.randn(n, dim_l)
+            mean = Z @ self.weight.T
+            X = var**0.5 * np.random.randn(n, dim) + mean
+            return X, Z
+
+        n_accept = 0
+        samples = []
+        lsamples = []
+        with util.NumpySeedContext(seed=seed):
+            while n_accept < n:
+                X, Z = ppca_sampler(n-n_accept)
+                idx = self.accept_cond(X)
+                samples.append(X[idx])
+                if return_latent:
+                    lsamples.append(Z[idx])
+                n_accept += np.count_nonzero(idx)
+        samples = np.vstack(samples)[:n]
+        if not return_latent:
+            return Data(samples)
+        lsamples = np.vstack(lsamples)[:n]
+        return Data(samples), Data(lsamples)
+
+
+class BallPPCA(TruncatedPPCA):
+    """PPCA model with ball truncated likelihood
+
+    """
+
+    def __init__(self, weight, var, radius=1.):
+        super(BallPPCA, self).__init__(weight, var)
+        self.radius = radius
+
+    def accept_cond(self, X):
+        sqnorm = np.sum(X**2, axis=-1) 
+        idx = (sqnorm < self.radius**2)
+        return idx
+
+    def enforce_constraint(self, X):
+        norm = np.sum(X**2, axis=-1, keepdims=True) ** 0.5
+        return X / (norm+1e-10) * self.radius
+
+    def posterior(self, X, n_sample, seed=13,
+                  n_burnin=200, stepsize=1e-3, ):
+        n = X.shape[0]
+        Z_init = np.random.randn(n, self.dim_l)
+        latents = mcmc.truncated_ppca_exchange_mala(X, n_sample=n_sample,
+                                      Z_init=Z_init, model=self, 
+                                      n_burnin=n_burnin, stepsize=stepsize,
+                                      seed=seed,
+                                      )
+        return latents
+
+
 class PositivePPCA(PPCA):
     """LatentVariableModel class implementing truncated PPCA
     supported on the positive orthant at the origin. 
@@ -240,7 +337,7 @@ class PositivePPCA(PPCA):
 # End of PositivePPCA
 
 
-class BoundedPPCA(PPCA):
+class BoundedPPCA(TruncatedPPCA):
     """LatentVariableModel class implementing truncated PPCA
     supported on the positive orthant at the origin. 
         Args:
@@ -257,17 +354,25 @@ class BoundedPPCA(PPCA):
         self.lim_upper = lim_upper
         self.lim_lower = lim_lower
 
+    def accept_cond(self, X):
+        lu = self.lim_upper
+        ll = self.lim_lower
+        x1 = (X<lu).all(axis=-1)
+        x2 = (X>ll).all(axis=-1)
+        idx = np.logical_and(x1, x2)
+        return idx
+
+    def enforce_constraint(self, X):
+        lu = self.lim_upper
+        ll = self.lim_lower
+        return np.clip(X, ll+1e-15, lu-1e+15)
+
     def sample(self, n, seed=3, return_latent=False):
         dim_l = self.dim_l
         dim = self.dim
         var = self.var
         lu = self.lim_upper
         ll = self.lim_lower
-
-        def accept_cond(X):
-            x1 = (X<lu).all(axis=1)
-            x2 = (X>ll).all(axis=1)
-            return np.logical_and(x1, x2)
 
         def ppca_sampler(n):
             Z = np.random.randn(n, dim_l)
@@ -281,7 +386,7 @@ class BoundedPPCA(PPCA):
         with util.NumpySeedContext(seed=seed):
             while n_accept < n:
                 X, Z = ppca_sampler(n-n_accept)
-                idx = accept_cond(X)
+                idx = self.accept_cond(X)
                 samples.append(X[idx])
                 if return_latent:
                     lsamples.append(Z[idx])
@@ -296,11 +401,11 @@ class BoundedPPCA(PPCA):
                   n_burnin=200, stepsize=1e-3, ):
         n = X.shape[0]
         Z_init = util.softplus(np.random.randn(n, self.dim_l), beta=10)
-        latents = mcmc.bppca_exchange(X, n_sample=n_sample,
-                                      Z_init=Z_init, bppca_model=self, 
-                                      n_burnin=n_burnin, stepsize=stepsize,
-                                      seed=seed,
-                                      )
+        latents = mcmc.truncated_ppca_exchange_mala(X, n_sample=n_sample,
+                                                    Z_init=Z_init, model=self,
+                                                    n_burnin=n_burnin, stepsize=stepsize,
+                                                    seed=seed
+                                                    )
         return latents
 
 

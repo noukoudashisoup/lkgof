@@ -304,6 +304,34 @@ class WeightSmoothIntevalProduct(WeightFunction):
         return coef*(P1+P2)*P
 
 
+class WeightSmoothBall(WeightFunction):
+    """Smooth function outputing 1 if the radius of the input is less than or equal to radius * frac 
+    and 0 if the radius is greater than radius. 
+
+    Args:
+        radius: the radius outside of which the function output 0
+        frac: the parameter to control the domain size where the function outputs 1.
+    """
+
+    def __init__(self, radius=1., frac=0.95):
+        self.radius = radius
+        self.frac = frac
+
+    def __call__(self, x):
+        """
+        Return a feature vector for the input x.
+        """
+        r = self.radius
+        return util.bump_l2(x, r, self.frac)
+
+    def parX(self, X, dim):
+        """Return the partial derivative at X w.r.t. dim"""
+        return util.partial_bump_l2(X, self.radius, dim, self.frac)
+    
+    def grad(self, X):
+        return util.grad_bump_l2(X, self.radius, self.frac)
+
+
 class ExpTruncWeight(WeightFunction):
 
     def __call__(self, x):
@@ -423,215 +451,6 @@ class KExpInner(DKSTKernel):
         X = 2 * (X-0.5)
         Y = 2 * (Y-0.5)
         return np.exp(np.mean(X*Y, axis=1))
-
-
-
-def bump_l2(X, r, scale=1e-2):
-    """Bump function"""
-    bump = np.zeros(X.shape[0])
-    l2 = np.sum(X**2, axis=1)**0.5
-    idx = (l2 < r)
-    bump[idx] = np.exp(-scale/(r**2 - l2[idx]**2))
-    return bump
-
-
-def partial_bump_l2(X, r, dim, scale=1e-2):
-    """Return partial derivative
-    with respect to dim-th coordinate of 
-    (n,)-array"""
-    pard = np.zeros(X.shape[0])
-    l2 = np.sum(X**2, axis=1)**0.5
-    idx = (l2 < r)
-    pard[idx] = -2.*X[idx, dim] / (r**2 - l2[idx]**2)**2
-    pard[idx] = scale * pard[idx] * bump_l2(X[idx], r, scale)
-    return pard
-
-
-def grad_bump_l2(X, r, scale=1e-2):
-    """Return gradient of bump function
-    of (n,d)-array"""
-    grad = np.zeros(X.shape)
-    l2 = np.sum(X**2, axis=1)**0.5
-    idx = (l2 < r)
-    grad[idx] = -2.*X[idx, :] / ((r**2 - l2[idx]**2)[:, np.newaxis])**2
-    grad[idx] = scale * grad[idx] * bump_l2(X[idx], r, scale)[:, np.newaxis]
-    return grad
-
-
-class KGaussBumpL2(KGauss):
-    """
-    Gaussian kernel with L2-bump function.
-    Supported in a L2-sphere with radius r centered at origin.
-    Args: 
-
-        - sigma2: kernel width
-        - r: radius of support
-    """
-
-    def __init__(self, sigma2, r, scale=1e-3):
-        super(KGaussBumpL2, self).__init__(sigma2)
-        self.r = r
-        self.scale = scale
-
-    def eval(self, X, Y):
-        """
-        Evaluate the Gaussian kernel on the two 2d numpy arrays.
-
-        Parameters
-        ----------
-        X : n1 x d numpy array
-        Y : n2 x d numpy array
-
-        Return
-        ------
-        K : a n1 x n2 Gram matrix.
-        """
-        r = self.r
-        scale = self.scale
-        K = super(KGaussBumpL2, self).eval(X, Y)
-        K = K * np.outer(bump_l2(X, r, scale), bump_l2(Y, r, scale))
-        return K
-
-    def gradX_Y(self, X, Y, dim):
-        """
-        Compute the gradient with respect to the dimension dim of X in k(X, Y).
-
-        X: nx x d
-        Y: ny x d
-
-        Return a numpy array of size nx x ny.
-        """
-        r = self.r
-        scale = self.scale
-        K = super(KGaussBumpL2, self).eval(X, Y)
-        G = super(KGaussBumpL2, self).gradX_Y(X, Y, dim)
-        bump_pard_X = partial_bump_l2(X, r, dim, scale)
-        bump_X = bump_l2(X, r, scale)
-        bump_Y = bump_l2(Y, r, scale)
-        return (np.outer(bump_pard_X, bump_Y)*K +
-                np.outer(bump_X, bump_Y) * G)
-
-    def pair_gradX_Y(self, X, Y):
-        """
-        Compute the gradient with respect to X in k(X, Y), evaluated at the
-        specified X and Y.
-
-        X: n x d
-        Y: n x d
-
-        Return a numpy array of size n x d
-        """
-        r = self.r
-        scale = self.scale
-        K = super(KGaussBumpL2, self).pair_eval(X, Y)
-        G = super(KGaussBumpL2, self).pair_gradX_Y(X, Y)
-        bump_grad_X = grad_bump_l2(X, r, scale)
-        bump_X = bump_l2(X, r, scale)
-        bump_Y = bump_l2(Y, r, scale)
-        return ((bump_grad_X*K)*bump_Y + G*bump_X*bump_Y)
-
-    def gradY_X(self, X, Y, dim):
-        """
-        Compute the gradient with respect to the dimension dim of Y in k(X, Y).
-
-        X: nx x d
-        Y: ny x d
-
-        Return a numpy array of size nx x ny.
-        """
-        return self.gradX_Y(Y, X, dim).T
-        
-    def pair_gradY_X(self, X, Y):
-        """
-        Compute the gradient with respect to Y in k(X, Y), evaluated at the
-        specified X and Y.
-
-        X: n x d
-        Y: n x d
-
-        Return a numpy array of size n x d
-        """
-        r = self.r
-        scale = self.scale
-        K = super(KGaussBumpL2, self).pair_eval(X, Y)
-        G = super(KGaussBumpL2, self).pair_gradX_Y(X, Y)
-        bump_grad_Y = grad_bump_l2(Y, r, scale)
-        bump_X = bump_l2(X, r, scale)
-        bump_Y = bump_l2(Y, r, scale)
-        return ((K*bump_grad_Y)*bump_X + G*bump_X*bump_Y)
-
-    def gradXY_sum(self, X, Y):
-        r"""
-        Compute \sum_{i=1}^d \frac{\partial^2 k(X, Y)}{\partial x_i \partial y_i}
-        evaluated at each x_i in X, and y_i in Y.
-
-        X: nx x d numpy array.
-        Y: ny x d numpy array.
-
-        Return a nx x ny numpy array of the derivatives.
-        """
-        d = X.shape[1]
-        K = super(KGaussBumpL2, self).eval(X, Y)
-        r = self.r
-        scale = self.scale
-        bump_X = bump_l2(X, r, scale)
-        bump_Y = bump_l2(Y, r, scale)
-        grad_bump_X = grad_bump_l2(X, r, scale)
-        grad_bump_Y = grad_bump_l2(Y, r, scale)
-        G = super(KGaussBumpL2, self).gradXY_sum(X, Y)
-        G *= np.outer(bump_X, bump_Y)
-        G += np.dot(grad_bump_X, grad_bump_Y.T) * K
-        for i in range(d):
-            K1 = super(KGaussBumpL2, self).gradX_Y(X, Y, i)
-            L2 = np.outer(bump_X, grad_bump_Y[:, i])
-            G += K1*L2 + K1.T*L2.T
-        return G
-
-    def pair_gradXY_sum(self, X, Y):
-        """
-        Compute \sum_{i=1}^d \frac{\partial^2 k(X, Y)}{\partial x_i \partial y_i}
-        evaluated at each x_i in X, and y_i in Y.
-
-        X: n x d numpy array.
-        Y: n x d numpy array.
-
-        Return a one-dimensional length-n numpy array of the derivatives.
-        """
-        K = super(KGaussBumpL2, self).pair_eval(X, Y)
-        G = super(KGaussBumpL2, self).pair_gradXY_sum(X, Y)
-        r = self.r
-        scale = self.scale
-        bump_X = bump_l2(X, r, scale)
-        bump_Y = bump_l2(Y, r, scale)
-        grad_bump_X = grad_bump_l2(X, r, scale)
-        grad_bump_Y = grad_bump_l2(Y, r, scale)
-        tmp = super(KGaussBumpL2, self).pair_gradY_X(X, Y)
-        tmp *= grad_bump_X * bump_Y
-        G += np.sum(tmp, axis=1)
-        tmp = super(KGaussBumpL2, self).pair_gradX_Y(X, Y)
-        tmp *= grad_bump_Y * bump_X
-        G += np.sum(tmp, axis=1)
-        G += np.sum(grad_bump_X*grad_bump_Y, axis=1) * K
-        return G
-
-    def pair_eval(self, X, Y):
-        """
-        Evaluate k(x1, y1), k(x2, y2), ...
-
-        Parameters
-        ----------
-        X, Y : n x d numpy array
-
-        Return
-        -------
-        a numpy array with length n
-        """
-        r = self.r
-        scale = self.scale
-        KVec = super(KGaussBumpL2, self).pair_eval(X, Y)
-        bump_X = bump_X(X, r, scale)
-        bump_Y = bump_Y(Y, r, scale)
-        return KVec * bump_X * bump_Y
 
 
 class DKLinear(DKSTKernel):
