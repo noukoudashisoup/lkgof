@@ -10,7 +10,7 @@ from lkgof.data import Data
 from lkgof import numpyro_models as nprm
 from scipy import stats
 import math
-from lkgof.util import random_choice_prob_index
+from lkgof.util import random_choice_prob_index, bump_l2 
 
 
 class LatentVariableModel(object, metaclass=ABCMeta):
@@ -179,8 +179,9 @@ class PPCA(LatentVariableModel):
 
 
 class TruncatedPPCA(PPCA):
-    """LatentVariableModel class implementing truncated PPCA
-    supported on the positive orthant at the origin. 
+    """LatentVariableModel class implementing PPCA 
+       with truncated likelihood. 
+
         Args:
             weight: a weight matrix for the likelihood
             var: the variance parameter for the likelihood
@@ -216,33 +217,43 @@ class TruncatedPPCA(PPCA):
         pass
 
 
+    def sample_from_likelihood(self, Z, nmax=10, npar=30):
+        W = self.weight
+        var = self.var 
+        d = self.dim
+
+        nsample = Z.shape[0]
+        X = np.empty([nsample, d])
+        notaccepted = np.full([nsample,], True)
+        mean = Z @ W.T
+        nsample_range = np.arange(nsample)
+
+        cnt = 0
+        while np.any(notaccepted) and cnt < nmax:
+            n_acpt = np.count_nonzero(notaccepted)
+            X_ = var**0.5 * np.random.randn(npar, n_acpt, d) + mean[notaccepted]
+            idx = self.accept_cond(X_)
+            accepted_idx = np.any(idx, axis=0)
+            accepted_paralell_sample_idx = np.argmin(idx[:, accepted_idx]<1, axis=0)
+            update_idx = nsample_range[notaccepted][accepted_idx]
+            X[update_idx] = X_[accepted_paralell_sample_idx, accepted_idx]
+            notaccepted[update_idx] = False
+            cnt += 1
+        if cnt == nmax:
+            n_acpt = np.count_nonzero(notaccepted)
+            X_ = var**0.5 * np.random.randn(n_acpt, d) + mean[notaccepted]
+            X[notaccepted] = self.enforce_constraint(X_)
+        return X
+
+
     def sample(self, n, seed=3, return_latent=False):
         dim_l = self.dim_l
-        dim = self.dim
-        var = self.var
-
-        def ppca_sampler(n):
-            Z = np.random.randn(n, dim_l)
-            mean = Z @ self.weight.T
-            X = var**0.5 * np.random.randn(n, dim) + mean
-            return X, Z
-
-        n_accept = 0
-        samples = []
-        lsamples = []
         with util.NumpySeedContext(seed=seed):
-            while n_accept < n:
-                X, Z = ppca_sampler(n-n_accept)
-                idx = self.accept_cond(X)
-                samples.append(X[idx])
-                if return_latent:
-                    lsamples.append(Z[idx])
-                n_accept += np.count_nonzero(idx)
-        samples = np.vstack(samples)[:n]
+            Z = np.random.randn(n, dim_l)
+            X = self.sample_from_likelihood(Z)
         if not return_latent:
-            return Data(samples)
-        lsamples = np.vstack(lsamples)[:n]
-        return Data(samples), Data(lsamples)
+            return Data(X)
+        return Data(X), Data(Z)
 
 
 class BallPPCA(TruncatedPPCA):
@@ -250,18 +261,34 @@ class BallPPCA(TruncatedPPCA):
 
     """
 
-    def __init__(self, weight, var, radius=1.):
+    def __init__(self, weight, var, radius=1., frac=0.9):
         super(BallPPCA, self).__init__(weight, var)
         self.radius = radius
+        self.frac = frac
 
     def accept_cond(self, X):
-        sqnorm = np.sum(X**2, axis=-1) 
-        idx = (sqnorm < self.radius**2)
+        r = self.radius
+        frac = self.frac
+        u = np.random.rand(*(X.shape[:-1]))
+        log_cutoff = np.log(bump_l2(X, r, frac))
+        idx = (np.log(u) <= log_cutoff)
         return idx
 
     def enforce_constraint(self, X):
         norm = np.sum(X**2, axis=-1, keepdims=True) ** 0.5
-        return X / (norm+1e-10) * self.radius
+        X0 = X / norm * (self.radius*0.98)
+        return X0
+
+    def log_unnormalizedjoint(self, X, latents):
+        r = self.radius
+        frac = self.frac
+
+        Z = latents['latent']
+        mean = np.dot(Z, self.weight.T)
+        log_joint = -0.5*np.sum((X-mean)**2, axis=-1)/self.var
+        log_joint = log_joint + np.log(bump_l2(X, r, frac))
+        log_joint = log_joint - 0.5*np.sum(Z**2, axis=-1)
+        return log_joint
 
     def posterior(self, X, n_sample, seed=13,
                   n_burnin=200, stepsize=1e-3, ):

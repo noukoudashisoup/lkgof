@@ -262,6 +262,32 @@ def met_imqksd_med(P, Q, data_source, n, r):
     return dcksd_result
 
 
+def met_imqksd_med_balltrunc(P, Q, data_source, n, r, 
+                    varest=util.second_order_ustat_variance_jackknife,
+):
+    """
+    KSD-based model comparison test
+        * One Median-scaled IMQ kernel for the two statistics.
+        * Use jackknife variance estimator
+    """
+
+    # sample some data 
+    kernel_data = sample_pqr(None, None, data_source, n=kernel_datasize, r=0, only_from_r=True)
+    X = kernel_data.data()
+    d = X.shape[1]
+    medX = util.meddistance(X)
+    kimq = kernel.KPIMQ(np.eye(d) * medX**2)
+    r = P.radius
+    w = kernel.WeightSmoothBall(radius=r, frac=0.9)
+    kw = kernel.KSTWeight(w)
+    k = kernel.KSTProduct(kimq, kw)
+    dz = P.dim_l
+
+    dcksd_result = _met_ksd(P, Q, data_source, n, r, k=k,)
+    return dcksd_result
+
+
+
 def met_gksd_med(P, Q, data_source, n, r,
                  varest=util.second_order_ustat_variance_jackknife,
                  ):
@@ -423,8 +449,10 @@ def met_imqlksd_med_balltrunc(P, Q, data_source, n, r,
     d = X.shape[1]
     medX = util.meddistance(X)
     kimq = kernel.KPIMQ(np.eye(d) * medX**2)
+    # kimq = kernel.KPIMQ(np.cov(X, rowvar=False))
+    #  k = kimq
     r = P.radius
-    w = kernel.WeightSmoothBall(radius=r)
+    w = kernel.WeightSmoothBall(radius=r, frac=0.8)
     kw = kernel.KSTWeight(w)
     k = kernel.KSTProduct(kimq, kw)
     dz = P.dim_l
@@ -529,6 +557,8 @@ from lkgof.ex.ex1_vary_n import met_imqmmd_medtrunc
 from lkgof.ex.ex1_vary_n import met_imqmmd_cov
 from lkgof.ex.ex1_vary_n import met_gksd_med
 from lkgof.ex.ex1_vary_n import met_imqksd_med
+from lkgof.ex.ex1_vary_n import met_imqlksd_medtrunc
+from lkgof.ex.ex1_vary_n import met_imqksd_med_balltrunc
 from lkgof.ex.ex1_vary_n import met_imqksd_cov
 from lkgof.ex.ex1_vary_n import met_glksd_med
 from lkgof.ex.ex1_vary_n import met_imqlksd_med
@@ -542,10 +572,10 @@ from lkgof.ex.ex1_vary_n import met_imqlksd_med_vstatvar
 ex = 1
 
 # significance level of the test
-alpha = 0.01
+alpha = 0.05
 
 # repetitions for each sample size 
-reps = 100
+reps = 300
 
 # kernel data size
 kernel_datasize = 1000
@@ -567,16 +597,17 @@ method_funcs = [
     # met_gksd_med,
     # met_glksd_med,
     met_imqmmd_med,
-    # met_imqksd_med,
+    met_imqksd_med,
     # met_imqlksd_med,
     # met_imqlksd_med_ustatvar,
     # met_imqlksd_med_vstatvar,
-    #met_imqmmd_cov,
-    # met_imqksd_cov,
+    met_imqmmd_cov,
+    met_imqksd_cov,
     # met_imqlksd_cov,
     # met_imqmmd_medtrunc,
     # met_imqlksd_medtrunc,
-    met_imqlksd_med_balltrunc,
+    # met_imqlksd_med_balltrunc,
+    # met_imqksd_med_balltrunc,
    ]
 
 # If is_rerun==False, do not rerun the experiment if a result file for the current
@@ -751,14 +782,22 @@ def get_ns_pqrsource(prob_label):
             # list of sample sizes
             ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=5, dz=2, ptbp=1.+1e-1,
                                                                 truncate=True),
+        'ballppca_h1_dx100_dz10_p2_q1_r50':
+            # list of sample sizes
+            ([i*100 for i in range(1, 5+1)], ) + make_ballppca_prob(dx=100, dz=10, ptbp=2, ptbq=1,
+                                                                    radius=50),
         'ballppca_h1_dx100_dz10_p2_q1_r40':
             # list of sample sizes
-            ([i*100 for i in range(1, 5+1)], ) + make_ballppca_prob(dx=100, dz=10, ptbp=2,
+            ([i*100 for i in range(1, 5+1)], ) + make_ballppca_prob(dx=100, dz=10, ptbp=2, ptbq=1,
                                                                     radius=40),
-        'ballppca_h0_dx100_dz10_p1_q1+1e-5_r30':
+        'ballppca_h1_dx100_dz10_p3_q1_r50':
+            # list of sample sizes
+            ([i*100 for i in range(1, 5+1)], ) + make_ballppca_prob(dx=100, dz=10, ptbp=3, ptbq=1,
+                                                                    radius=50),
+        'ballppca_h0_dx100_dz10_p1_q1+1e-5_r50':
             # list of sample sizes
             ([i*100 for i in range(1, 5+1)], ) + make_ballppca_prob(dx=100, dz=10, ptbq=1+1e-5,
-                                                                    radius=30),
+                                                                    radius=50),
         'bppca_h1_dx100_dz10_p2_q1_b10':
             # list of sample sizes
             ([i*100 for i in range(1, 5+1)], ) + make_ppca_prob(dx=100, dz=10, ptbp=2,

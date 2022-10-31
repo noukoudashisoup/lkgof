@@ -230,18 +230,20 @@ def test_rejection_sampler():
     print(X.shape)
 
 def smooth_rect(X):
-    idx = (X>1e-10)
-    return anp.where(idx, anp.exp(-1/X), 1e-15)
+    idx = (X<=1e-2)
+    Y = anp.where(idx, 1e-2, X)
+    return anp.where(idx, 1e-15, anp.exp(-1/Y))
 
 def der_smooth_rect(X):
-    idx = (X>1e-10)
+    idx = (X>1e-2)
     return anp.where(idx, anp.divide(anp.exp(-1/X), X**2), 1e-15)
 
 def cutoff(X, a, b):
     Fb = smooth_rect(b-X)
     Fa = smooth_rect(X-a)
-    idx = (Fb > 1e-12)
-    Y = anp.where(idx, 1./(1.+Fa/Fb), 1e-15)
+    logdiff = anp.log(Fa)-anp.log(Fb)
+    idx = anp.logical_or(Fb < 1e-12, logdiff>25)
+    Y = anp.where(idx, 1e-15, 1./(1.+anp.exp(logdiff)))
     idx_ = (Fa < 1e-12)
     return anp.where(idx_, 1., Y)
 
@@ -255,7 +257,7 @@ def der_cutoff(x, a, b):
 def bump_l2(X, r, frac=0.95):
     if frac <= 0 or frac >1:
         raise ValueError('frac has to between 0 and 1')
-    norm = anp.sum(X**2, axis=-1)**0.5
+    norm = anp.sqrt(anp.sum(X**2, axis=-1)+1e-15)
     return cutoff(norm, frac*r, r)
 
 def partial_bump_l2(X, r, dim, frac=0.95):
@@ -266,7 +268,7 @@ def partial_bump_l2(X, r, dim, frac=0.95):
         raise ValueError('frac has to between 0 and 1')
     _, d = X.shape
     Xd = X[:, dim]
-    norm = anp.sum(X**2, axis=1)**0.5
+    norm = anp.sum(X**2, axis=-1)**0.5
     r_ = frac * r
     if d == 1:
         return der_cutoff(norm, r_, r)
@@ -278,10 +280,17 @@ def grad_bump_l2(X, r, frac=0.95):
     of (n,d)-array"""
     if frac <= 0 or frac >1:
         raise ValueError('frac has to between 0 and 1')
-    norm = anp.sum(X**2, axis=1)**0.5
+    norm = anp.sum(X**2, axis=-1, keepdims=True)**0.5
     r_ = frac * r
     P = der_cutoff(norm, r_, r) * X / norm
     return P
+
+def ball_sampler(n, d, radius):
+    X = np.random.randn(n, d) 
+    Xnorm = np.sum(X**2, axis=1, keepdims=True)**0.5
+    u = np.random.rand(n)
+    r = radius * u**(1./d)
+    return r * X/Xnorm
 
 
 def main():

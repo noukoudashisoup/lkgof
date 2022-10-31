@@ -532,33 +532,6 @@ def truncated_ppca_exchange_mala(X, n_sample, Z_init, model, stepsize=1e-3, seed
         diff_norm_backward = -np.sum(diff_backward**2, axis=-1)/(4.*stepsize)
         return (diff_norm_backward-diff_norm_forward) 
 
-    def sample_from_likelihood(Z):
-        nsample = Z.shape[0]
-        X = np.empty([nsample, d])
-        notaccepted = np.full([nsample,], True)
-        mean = Z @ W.T
-        nsample_range = np.arange(nsample)
-
-        nmax = 2
-        npar = 10
-        cnt = 0
-
-        while np.any(notaccepted) and cnt < nmax:
-            n_acpt = np.count_nonzero(notaccepted)
-            X_ = var**0.5 * np.random.randn(npar, n_acpt, d) + mean[notaccepted]
-            idx = model.accept_cond(X_)
-            accepted_idx = np.any(idx, axis=0)
-            accepted_paralell_sample_idx = np.argmin(idx[:, accepted_idx]<1, axis=0)
-            update_idx = nsample_range[notaccepted][accepted_idx]
-            X[update_idx] = X_[accepted_paralell_sample_idx, accepted_idx]
-            notaccepted[update_idx] = False
-            cnt += 1
-        if cnt == nmax:
-            n_acpt = np.count_nonzero(notaccepted)
-            X_ = var**0.5 * np.random.randn(n_acpt, d) + mean[notaccepted]
-            X[notaccepted] = model.enforce_constraint(X_)
-        return X
-    
     def log_prior_ratio(Z1, Z2):
         p1 = -0.5 * (Z1**2).sum(axis=1)
         p2 = -0.5 * (Z2**2).sum(axis=1)
@@ -579,7 +552,7 @@ def truncated_ppca_exchange_mala(X, n_sample, Z_init, model, stepsize=1e-3, seed
             Zprop = (Z_ + stepsize*log_grad(Z_, X)
                     + (2*stepsize)**0.5 * np.random.randn(n, dz,))
             accept_prob = np.zeros(n)
-            Xprop = sample_from_likelihood(Zprop)
+            Xprop = model.sample_from_likelihood(Zprop, nmax=10, npar=30)
             accept_prob = log_prior_ratio(Zprop, Z_)
             accept_prob += log_likelihood_ratio(X, X, Zprop, Z_)
             accept_prob += log_likelihood_ratio(Xprop, Xprop, Z_, Zprop)
