@@ -471,6 +471,7 @@ def get_density_cmap():
 
 
 def plot_prob_reject_heatmap(ex, fname, func_xvalues, func_yvalues, xlabel, ylabel, 
+                             xscale='linear', yscale='linear',
                              func_title=None, return_plot_values=False):
     """
     plot the empirical probability that the statistic is above the threshold.
@@ -559,8 +560,8 @@ def plot_prob_reject_heatmap(ex, fname, func_xvalues, func_yvalues, xlabel, ylab
         ax.set_title(method_label)
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
-        ax.set_xscale('log')
-        ax.set_yscale('log')
+        ax.set_xscale(xscale)
+        ax.set_yscale(yscale)
         ax.xaxis.set_minor_formatter(matplotlib.ticker.ScalarFormatter())
         ax.yaxis.set_minor_formatter(matplotlib.ticker.ScalarFormatter())
     cbar = ax.cax.colorbar(im)

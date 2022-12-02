@@ -572,7 +572,7 @@ from lkgof.ex.ex1_vary_n import met_imqlksd_med_vstatvar
 ex = 1
 
 # significance level of the test
-alpha = 0.05
+alpha = 0.01
 
 # repetitions for each sample size 
 reps = 300
@@ -597,13 +597,13 @@ method_funcs = [
     # met_gksd_med,
     # met_glksd_med,
     met_imqmmd_med,
-    met_imqksd_med,
-    # met_imqlksd_med,
+    # met_imqksd_med,
+    met_imqlksd_med,
     # met_imqlksd_med_ustatvar,
     # met_imqlksd_med_vstatvar,
     met_imqmmd_cov,
-    met_imqksd_cov,
-    # met_imqlksd_cov,
+    # met_imqksd_cov,
+    met_imqlksd_cov,
     # met_imqmmd_medtrunc,
     # met_imqlksd_medtrunc,
     # met_imqlksd_med_balltrunc,
